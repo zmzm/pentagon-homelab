@@ -2,70 +2,59 @@
 
 Domain routing configuration for the Pentagon homelab.
 
-All domains are served through the Caddy reverse proxy.
-
----
-
-# Local Domain
-
-Primary internal domain:
-
-home.arpa
-
-This domain is resolved locally through Pi-hole.
+Most service domains are served through the Caddy reverse proxy. Local names use `home.arpa` and are resolved through Pi-hole.
 
 ---
 
 # Service Domains
 
-| Domain | Service | Container | Notes |
+| Domain | Service | Target | Notes |
 |------|------|------|------|
-| vault.home.arpa | Vaultwarden | vaultwarden | Password manager |
-| dash.home.arpa | Homarr | homarr | Main dashboard |
-| docker.home.arpa | Portainer | portainer | Docker management |
-| pihole.home.arpa | Pi-hole | pihole | DNS admin panel |
-| interview-assistant.home.arpa | Interview Assistant | nextapp | Next.js application |
+| `vault.home.arpa` | Vaultwarden | `vaultwarden:80` | Password manager, Caddy internal TLS enabled |
+| `docker.home.arpa` | Portainer | `portainer:9000` | Docker management |
+| `pihole.home.arpa` | Pi-hole | `100.126.16.76:8081` | DNS admin panel |
+| `dashboard.home.arpa` | Homepage | `homepage:3000` | Main dashboard |
+| `backrest.home.arpa` | Backrest | `backrest:9898` | Restic backup UI, Caddy internal TLS enabled |
+| `interview-assistant.home.arpa` | Interview Assistant | `nextapp:3000` | Route exists in Caddyfile; no local app compose project is tracked |
 
 ---
 
 # Reverse Proxy
 
-All services are routed through Caddy.
-
 Caddy configuration location:
 
+```text
 apps/caddy/Caddyfile
+```
 
-Example routing:
+Current Caddy routes:
 
-vault.home.arpa → vaultwarden:80  
-dash.home.arpa → homarr:7575  
-docker.home.arpa → portainer:9000  
-pihole.home.arpa → host:8081  
-interview-assistant.home.arpa → nextapp:3000  
+```text
+vault.home.arpa                → vaultwarden:80
+docker.home.arpa               → portainer:9000
+pihole.home.arpa               → 100.126.16.76:8081
+interview-assistant.home.arpa  → nextapp:3000
+dashboard.home.arpa            → homepage:3000
+backrest.home.arpa             → backrest:9898
+```
 
 ---
 
-# Direct Access Services
+# Direct / Local Access
 
-Some services are currently accessed directly via ports.
+Some services also expose host-local ports:
 
-| Service | Port |
-|------|------|
-| Homepage | 3002 |
-
-Example:
-
-http://SERVER_IP:3002
+| Service | Port | Notes |
+|------|------|------|
+| Pi-hole | `8081` | Host network mode |
+| Unbound | `127.0.0.1:5335` | Recursive DNS |
+| Matrix Synapse | `127.0.0.1:8008` | Local homeserver listener |
 
 ---
 
 # DNS Flow
 
-Client devices use Pi-hole as DNS resolver.
-
-DNS flow:
-
+```text
 Client
   ↓
 Pi-hole
@@ -73,6 +62,7 @@ Pi-hole
 Unbound
   ↓
 Internet root DNS servers
+```
 
 ---
 
@@ -80,16 +70,18 @@ Internet root DNS servers
 
 Potential future services may include:
 
-ai.home.arpa  
-monitor.home.arpa  
-logs.home.arpa  
-git.home.arpa  
+```text
+ai.home.arpa
+monitor.home.arpa
+logs.home.arpa
+git.home.arpa
+```
 
 ---
 
 # Notes
 
-- All service routing is handled by Caddy.
-- Internal TLS is supported by Caddy.
+- Caddy handles reverse proxy routing.
 - Pi-hole manages local DNS records.
 - Unbound provides recursive DNS resolution.
+- Cloudflared is configured separately through `data/cloudflared`, which is not committed.

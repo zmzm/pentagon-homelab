@@ -1,6 +1,6 @@
 # 🏠 Pentagon Homelab
 
-Raspberry Pi 5 based self-hosted infrastructure.
+Raspberry Pi 5 based self-hosted infrastructure managed with Docker Compose.
 
 ## Hardware
 
@@ -15,32 +15,45 @@ Raspberry Pi 5 based self-hosted infrastructure.
 
 # 📁 Repository Structure
 
+```text
 homelab/
-├── apps/        # docker compose files and app configs  
-├── data/        # persistent service data  
-└── incidents/   # incident reports and troubleshooting notes  
+├── apps/        # Docker Compose files and app configs
+├── backups/     # local backup repositories, not committed
+├── data/        # persistent service data, not committed
+└── incidents/   # incident reports and troubleshooting notes
+```
 
-Apps directory contains application configuration and docker-compose files.
+Tracked files are intended to be reproducible service definitions and documentation. Runtime state, backups, downloaded binaries, and real `.env` files are ignored by Git.
 
+```text
 apps/
-├── caddy  
-├── homarr  
-├── homepage  
-├── pihole  
-├── portainer  
-├── unbound  
-└── vaultwarden  
+├── backrest
+├── caddy
+├── cloudflared
+├── homepage
+├── matrix
+├── pihole
+├── pihole-adapter
+├── portainer
+├── turn
+├── unbound
+├── vaultwarden
+└── watchtower
+```
 
-Data directory contains persistent volumes mounted into containers.
-
+```text
 data/
-├── caddy  
-├── homarr  
-├── homepage  
-├── pihole  
-├── portainer  
-├── unbound  
-└── vaultwarden  
+├── backrest
+├── caddy
+├── cloudflared
+├── homepage
+├── matrix
+├── pihole
+├── portainer
+├── turn
+├── unbound
+└── vaultwarden
+```
 
 ---
 
@@ -50,27 +63,34 @@ data/
 
 ### Caddy
 
-Handles routing for internal services.
+Handles internal routing and TLS for selected services.
 
-Location:  
-apps/caddy
+- Location: `apps/caddy`
+- Data: `data/caddy`
+- Network: `proxy`
+- Public ports: `80`, `443`
 
-Data:  
-data/caddy
+Routes:
 
-Responsibilities:
+- `vault.home.arpa` → `vaultwarden:80`
+- `docker.home.arpa` → `portainer:9000`
+- `pihole.home.arpa` → `100.126.16.76:8081`
+- `interview-assistant.home.arpa` → `nextapp:3000`
+- `dashboard.home.arpa` → `homepage:3000`
+- `backrest.home.arpa` → `backrest:9898`
 
-- Reverse proxy
-- Internal TLS
-- Domain routing
+---
 
-Domains:
+## Backups
 
-- vault.home.arpa
-- dash.home.arpa
-- docker.home.arpa
-- pihole.home.arpa
-- interview-assistant.home.arpa
+### Backrest
+
+Restic backup UI.
+
+- Location: `apps/backrest`
+- Data: `data/backrest`
+- Backup repositories: `backups/`
+- Access: `http://backrest.home.arpa`
 
 ---
 
@@ -80,14 +100,9 @@ Domains:
 
 Bitwarden-compatible password manager.
 
-Location:  
-apps/vaultwarden
-
-Data:  
-data/vaultwarden
-
-Access:  
-https://vault.home.arpa
+- Location: `apps/vaultwarden`
+- Data: `data/vaultwarden`
+- Access: `https://vault.home.arpa`
 
 ---
 
@@ -97,33 +112,44 @@ https://vault.home.arpa
 
 Network-wide ad blocker and DNS manager.
 
-Location:  
-apps/pihole
-
-Data:  
-data/pihole
-
-Access:  
-http://pihole.home.arpa
+- Location: `apps/pihole`
+- Data: `data/pihole`
+- Access: `http://pihole.home.arpa`
+- Host web port: `8081`
 
 Uses Unbound as upstream DNS resolver.
 
----
+### Pi-hole Adapter
+
+Small custom API adapter used by Homepage widgets.
+
+- Location: `apps/pihole-adapter`
+- Secrets: `apps/pihole-adapter/.env`
+- Network: `proxy`
 
 ### Unbound
 
 Recursive DNS resolver.
 
-Location:  
-apps/unbound
+- Location: `apps/unbound`
+- Config: `apps/unbound/unbound.conf`
+- Port: `127.0.0.1:5335`
 
-Data:  
-data/unbound
+### Cloudflared
 
-Port:  
-127.0.0.1:5335
+Cloudflare tunnel container.
 
-Used by Pi-hole.
+- Location: `apps/cloudflared`
+- Data/config: `data/cloudflared`
+- Network mode: `host`
+
+### Coturn
+
+TURN server.
+
+- Location: `apps/turn`
+- Config/data: `data/turn`
+- Network mode: `host`
 
 ---
 
@@ -133,101 +159,67 @@ Used by Pi-hole.
 
 Docker management UI.
 
-Location:  
-apps/portainer
-
-Data:  
-data/portainer
-
-Access:  
-http://docker.home.arpa
+- Location: `apps/portainer`
+- Data: `data/portainer`
+- Access: `http://docker.home.arpa`
+- Secrets: `apps/portainer/.env`
 
 ---
 
 ## Dashboards
 
-### Homarr
+### Homepage
 
 Main service dashboard.
 
-Location:  
-apps/homarr
-
-Data:  
-data/homarr
-
-Access:  
-http://dash.home.arpa
+- Location: `apps/homepage`
+- Config/data: `data/homepage`
+- Access: `http://dashboard.home.arpa`
 
 ---
 
-### Homepage
+## Messaging
 
-Secondary dashboard (experimentation / widgets).
+### Matrix Synapse
 
-Location:  
-apps/homepage
+Matrix homeserver backed by Postgres.
 
-Data:  
-data/homepage
-
-Direct access:  
-http://SERVER_IP:3002
+- Location: `apps/matrix`
+- Data: `data/matrix`
+- Local Synapse port: `127.0.0.1:8008`
+- Secrets: `apps/matrix/.env`
 
 ---
 
-## Applications
+## Automation
 
-### Interview Assistant (Next.js)
+### Watchtower
 
-Next.js application running in Docker.
+Automatic Docker image updater for containers with the Watchtower label enabled.
 
-Container name:  
-nextapp
-
-Access:  
-http://interview-assistant.home.arpa
+- Location: `apps/watchtower`
+- Schedule: `0 0 4 * * *`
 
 ---
 
-# 🌐 Domain Routing
+# 🔐 Secrets and Git
 
-Managed via Caddy.
+Real `.env` files are intentionally ignored. Example files document required variables:
 
-vault.home.arpa → vaultwarden  
-dash.home.arpa → homarr  
-docker.home.arpa → portainer  
-pihole.home.arpa → pihole  
-interview-assistant.home.arpa → nextapp  
+- `apps/matrix/.env.example`
+- `apps/portainer/.env.example`
 
----
+Ignored sensitive/runtime paths include:
 
-# 🧠 Notes
-
-- Docker Compose used for service management.
-- Application configs stored in apps/.
-- Persistent data stored in data/.
-- Caddy handles internal TLS and routing.
-- Pi-hole + Unbound used for DNS resolution.
-
----
-
-# 🛠 Future Improvements
-
-Possible additions:
-
-- Centralized logging
-- Automated container updates
-- Monitoring stack
-- Backup strategy
-- AI assistant services
+- `data/`
+- `backups/`
+- `apps/*/.env`
+- `.agents/`
+- `.codex/`
+- downloaded binaries such as `cloudflared-linux-arm`
 
 ---
 
 # 📋 Incidents
 
-Operational issues and resolutions are documented in:
-
-incidents/
-
-This directory contains postmortems and troubleshooting notes.
+Operational issues and resolutions are documented in `incidents/`.

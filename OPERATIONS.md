@@ -100,6 +100,53 @@ docker compose up -d --force-recreate
 
 ---
 
+# Secrets
+
+Real environment files are local only and ignored by Git.
+
+Current local secret files:
+
+apps/matrix/.env
+apps/pihole-adapter/.env
+apps/portainer/.env
+
+Tracked example files document required variables:
+
+apps/matrix/.env.example
+apps/portainer/.env.example
+
+When starting a service, run Docker Compose from that service directory so the local `.env` file is loaded automatically.
+
+Example:
+
+cd ~/Documents/homelab/apps/matrix
+docker compose up -d
+
+---
+
+# Git
+
+The repository tracks service definitions, static configs, documentation, and incident notes.
+
+Ignored local/runtime paths include:
+
+data/
+backups/
+apps/*/.env
+.agents/
+.codex/
+cloudflared-linux-arm
+
+Check what would be committed:
+
+git status --short
+
+Check ignored files:
+
+git status --short --ignored
+
+---
+
 # Inspect Docker
 
 ## Container details
