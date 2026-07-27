@@ -1,0 +1,59 @@
+# Persistent service state and backups
+/data/
+/backups/
+
+# Local Codex/agent metadata
+/.agents/
+/.codex/
+
+# Secrets and local environment
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+*.secret
+*.secrets
+*secret*
+*secrets*
+*credential*
+*credentials*
+*token*
+
+# Keys, certificates, and auth material
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.csr
+id_rsa
+id_ed25519
+known_hosts
+authorized_keys
+
+# Runtime output
+*.log
+logs/
+tmp/
+temp/
+cache/
+*.pid
+
+# Downloaded/build artifacts
+/cloudflared-linux-arm
+/apps/vaultwarden/docker-compose.yml5;5u
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.deb
+*.rpm
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

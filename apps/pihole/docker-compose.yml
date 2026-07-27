@@ -1,0 +1,48 @@
+services:
+  pihole:
+    container_name: pihole
+    image: pihole/pihole:latest
+    network_mode: host
+    restart: unless-stopped
+    shm_size: "128mb"
+
+    environment:
+      TZ: "Europe/Warsaw"
+      DNSMASQ_LISTENING: all
+      FTLCONF_dns_maxConcurrent: "500"
+      FTLCONF_webserver_port: "8081o,[::]:8081o"
+      FTLCONF_webserver_api_max_sessions: 64
+
+    volumes:
+      - /home/pentagon-admin/Documents/homelab/data/pihole/etc-pihole:/etc/pihole
+      - /home/pentagon-admin/Documents/homelab/data/pihole/etc-dnsmasq.d:/etc/dnsmasq.d
+
+    labels:
+      - homepage.group=Network
+      - homepage.name=Pi-hole
+      - homepage.icon=pi-hole
+      - homepage.href=http://pihole.home.arpa/admin
+      - homepage.description=DNS and ad blocking
+      - homepage.widget.type=customapi
+      - homepage.widget.url=http://pihole-adapter:8000/pihole-summary
+      - homepage.widget.refreshInterval=120000
+
+      - homepage.widget.mappings[0].field=queries_total
+      - homepage.widget.mappings[0].label=Queries
+      - homepage.widget.mappings[0].format=number
+
+      - homepage.widget.mappings[1].field=queries_blocked
+      - homepage.widget.mappings[1].label=Blocked
+      - homepage.widget.mappings[1].format=number
+
+      - homepage.widget.mappings[2].field=percent_blocked
+      - homepage.widget.mappings[2].label=Blocked %
+      - homepage.widget.mappings[2].format=percent
+
+      - homepage.widget.mappings[3].field=unique_clients
+      - homepage.widget.mappings[3].label=Clients
+      - homepage.widget.mappings[3].format=number
+
+      - homepage.widget.mappings[4].field=domains_being_blocked
+      - homepage.widget.mappings[4].label=Domains
+      - homepage.widget.mappings[4].format=number

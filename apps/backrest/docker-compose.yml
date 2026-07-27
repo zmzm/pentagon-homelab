@@ -1,0 +1,41 @@
+services:
+  backrest:
+    image: ghcr.io/garethgeorge/backrest:latest
+    container_name: backrest
+    hostname: backrest
+    restart: unless-stopped
+
+    environment:
+      - BACKREST_DATA=/data
+      - BACKREST_CONFIG=/config/config.json
+      - XDG_CACHE_HOME=/cache
+      - TMPDIR=/tmp
+      - TZ=Europe/Warsaw
+
+    volumes:
+      - /home/pentagon-admin/Documents/homelab/data/backrest/data:/data
+      - /home/pentagon-admin/Documents/homelab/data/backrest/config:/config
+      - /home/pentagon-admin/Documents/homelab/data/backrest/cache:/cache
+      - /home/pentagon-admin/Documents/homelab/data/backrest/tmp:/tmp
+      - /home/pentagon-admin/Documents/homelab:/userdata/homelab:ro
+      - /home/pentagon-admin/Documents/homelab/backups:/repos
+
+    networks:
+      - proxy
+
+    labels:
+      - homepage.group=Infrastructure
+      - homepage.name=Backrest
+      - homepage.icon=sh-backrest
+      - homepage.href=http://backrest.home.arpa
+      - homepage.description=Restic backup UI
+
+      - homepage.widget.type=backrest
+      - homepage.widget.url=http://backrest:9898
+      - homepage.widget.username=""
+      - homepage.widget.password=""
+      - com.centurylinklabs.watchtower.enable=true
+
+networks:
+   proxy:
+     external: true

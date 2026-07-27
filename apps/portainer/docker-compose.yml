@@ -1,0 +1,25 @@
+services:
+  portainer:
+    image: portainer/portainer-ce:alpine-sts
+    container_name: portainer
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/pentagon-admin/Documents/homelab/data/portainer/data:/data
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+      - homepage.group=Infrastructure
+      - homepage.name=Portainer
+      - homepage.icon=portainer
+      - homepage.href=http://docker.home.arpa
+      - homepage.description=Docker management
+      - homepage.widget.type=portainer
+      - homepage.widget.url=http://portainer:9000
+      - homepage.widget.env=4
+      - homepage.widget.key=${PORTAINER_HOMEPAGE_WIDGET_KEY:?set PORTAINER_HOMEPAGE_WIDGET_KEY}
+
+networks:
+  proxy:
+    external: true

@@ -1,0 +1,19 @@
+services:
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /home/pentagon-admin/Documents/homelab/data/caddy/data:/data
+      - /home/pentagon-admin/Documents/homelab/data/caddy/config:/config
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    name: proxy
+    driver: bridge

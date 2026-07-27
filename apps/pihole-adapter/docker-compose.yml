@@ -1,0 +1,19 @@
+services:
+  pihole-adapter:
+    build: .
+    container_name: pihole-adapter
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PIHOLE_BASE_URL: ${PIHOLE_BASE_URL}
+      PIHOLE_PASSWORD: ${PIHOLE_PASSWORD}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT}
+      SUMMARY_CACHE_TTL: ${SUMMARY_CACHE_TTL}
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
+

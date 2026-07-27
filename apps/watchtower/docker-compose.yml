@@ -1,0 +1,30 @@
+services:
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+
+    environment:
+      - DOCKER_API_VERSION=1.44
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    command: >
+      --cleanup
+      --label-enable
+      --schedule "0 0 4 * * *"
+
+    networks:
+      - proxy
+
+    labels:
+      - homepage.group=Infrastructure
+      - homepage.name=Watchtower
+      - homepage.icon=watchtower
+      - com.centurylinklabs.watchtower.enable=true
+      - homepage.description=Docker auto updater
+
+networks:
+  proxy:
+    external: true

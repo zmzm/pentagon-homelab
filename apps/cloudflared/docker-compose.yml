@@ -1,0 +1,11 @@
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --config /etc/cloudflared/config.yml run
+    network_mode: host
+    volumes:
+      - /home/pentagon-admin/Documents/homelab/data/cloudflared:/etc/cloudflared:ro
+    #extra_hosts:
+      #- "host.docker.internal:host-gateway"

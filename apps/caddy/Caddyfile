@@ -1,0 +1,50 @@
+vault.home.arpa {
+    tls internal
+    reverse_proxy vaultwarden:80 {
+        health_uri /
+        health_interval 10s
+        health_timeout 5s
+        lb_try_duration 5s
+    }
+}
+
+docker.home.arpa {
+    reverse_proxy portainer:9000 {
+        health_uri /
+        health_interval 10s
+        health_timeout 5s
+        lb_try_duration 5s
+    }
+}
+
+pihole.home.arpa {
+    reverse_proxy 100.126.16.76:8081
+}
+
+interview-assistant.home.arpa {
+    reverse_proxy nextapp:3000 {
+        health_uri /
+        health_interval 10s
+        health_timeout 5s
+        lb_try_duration 5s
+    }
+}
+
+dashboard.home.arpa {
+    reverse_proxy homepage:3000 {
+        health_uri /
+        health_interval 10s
+        health_timeout 5s
+        lb_try_duration 5s
+    }
+}
+
+backrest.home.arpa {
+    tls internal
+    reverse_proxy backrest:9898 {
+        health_uri /
+        health_interval 10s
+        health_timeout 5s
+        lb_try_duration 5s
+    }
+}

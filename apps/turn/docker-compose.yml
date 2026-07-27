@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  coturn:
+    image: coturn/coturn
+    container_name: coturn
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /home/pentagon-admin/Documents/homelab/data/turn:/etc/coturn
+    command: >
+      turnserver -c /etc/coturn/turnserver.conf
