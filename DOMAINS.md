@@ -75,7 +75,6 @@ Potential future services may include:
 
 ```text
 ai.home.arpa
-monitor.home.arpa
 logs.home.arpa
 git.home.arpa
 ```

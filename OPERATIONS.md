@@ -384,6 +384,14 @@ Better alternative:
 
 btop
 
+Netdata dashboard:
+
+https://netdata.home.arpa
+
+Netdata API check:
+
+curl -k https://netdata.home.arpa/api/v3/info
+
 ---
 
 ## Disk usage

@@ -223,6 +223,7 @@ Automatic Docker image updater for containers with the Watchtower label enabled.
 Real `.env` files are intentionally ignored. Example files document required variables:
 
 - `apps/matrix/.env.example`
+- `apps/netdata/.env.example`
 - `apps/portainer/.env.example`
 
 Ignored sensitive/runtime paths include:
