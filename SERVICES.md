@@ -8,7 +8,7 @@ List of services in the Pentagon homelab.
 
 | Service | Purpose | Domain | App Location | Data Location |
 |-------|-------|-------|-------|-------|
-| Caddy | Reverse proxy / TLS | `vault.home.arpa`, `docker.home.arpa`, `pihole.home.arpa`, `dashboard.home.arpa`, `backrest.home.arpa` | `apps/caddy` | `data/caddy` |
+| Caddy | Reverse proxy / TLS | `vault.home.arpa`, `docker.home.arpa`, `pihole.home.arpa`, `dashboard.home.arpa`, `backrest.home.arpa`, `netdata.home.arpa` | `apps/caddy` | `data/caddy` |
 | Portainer | Docker management UI | `docker.home.arpa` | `apps/portainer` | `data/portainer` |
 | Watchtower | Automatic container updates | internal | `apps/watchtower` | none |
 
@@ -39,6 +39,14 @@ List of services in the Pentagon homelab.
 | Service | Purpose | Domain | App Location | Data Location |
 |-------|-------|-------|-------|-------|
 | Homepage | Service dashboard | `dashboard.home.arpa` | `apps/homepage` | `data/homepage` |
+
+---
+
+# Monitoring
+
+| Service | Purpose | Domain | App Location | Data Location |
+|-------|-------|-------|-------|-------|
+| Netdata | Host and Docker monitoring | `netdata.home.arpa`, Netdata Cloud | `apps/netdata` | `data/netdata` |
 
 ---
 
@@ -77,6 +85,7 @@ List of services in the Pentagon homelab.
 | `5335` | Unbound DNS on localhost |
 | `8008` | Matrix Synapse on localhost |
 | `9898` | Backrest inside Docker network |
+| `19999` | Netdata inside Docker `proxy` network |
 
 ---
 
@@ -87,11 +96,13 @@ Real `.env` files are ignored by Git. Tracked example files:
 | File | Variables |
 |-------|-------|
 | `apps/matrix/.env.example` | `MATRIX_POSTGRES_PASSWORD` |
+| `apps/netdata/.env.example` | `NETDATA_CLAIM_URL`, `NETDATA_CLAIM_TOKEN`, `NETDATA_CLAIM_ROOMS` |
 | `apps/portainer/.env.example` | `PORTAINER_HOMEPAGE_WIDGET_KEY` |
 
 Existing ignored local env files:
 
 - `apps/matrix/.env`
+- `apps/netdata/.env`
 - `apps/pihole-adapter/.env`
 - `apps/portainer/.env`
 

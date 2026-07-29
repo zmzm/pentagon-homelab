@@ -19,6 +19,10 @@ Clients / browsers
  ▼      ▼               ▼               ▼               ▼              ▼
 Vaultwarden        Portainer        Homepage        Backrest        Pi-hole
 (passwords)        (Docker UI)      (dashboard)     (backups)       (DNS UI)
+                                      │
+                                      ▼
+                                   Netdata
+                                 (monitoring)
 ```
 
 `interview-assistant.home.arpa` is still present in the Caddyfile and points to `nextapp:3000`, but there is no local `apps/nextapp` compose project in this repository.
@@ -54,6 +58,7 @@ homelab/
 │   ├── cloudflared
 │   ├── homepage
 │   ├── matrix
+│   ├── netdata
 │   ├── pihole
 │   ├── pihole-adapter
 │   ├── portainer
@@ -84,6 +89,7 @@ pihole.home.arpa               → 100.126.16.76:8081
 interview-assistant.home.arpa  → nextapp:3000
 dashboard.home.arpa            → homepage:3000
 backrest.home.arpa             → backrest:9898
+netdata.home.arpa              → netdata:19999
 ```
 
 ---
@@ -103,6 +109,7 @@ cloudflared     → Cloudflare tunnel
 coturn          → TURN server
 matrix-synapse  → Matrix homeserver
 matrix-postgres → Matrix database
+netdata         → host and Docker monitoring
 watchtower      → automated container updates
 ```
 
@@ -112,6 +119,7 @@ watchtower      → automated container updates
 
 - Internal TLS is handled by Caddy for configured routes.
 - Vaultwarden is exposed through the reverse proxy.
+- Netdata runs on the shared `proxy` network with privileged host mounts so Caddy can reach it while it collects host and Docker metrics.
 - DNS queries are filtered by Pi-hole and resolved through Unbound.
 - Docker services are split between the shared `proxy` network, service-specific networks, and host networking where required.
 - Secrets live in ignored `.env` files next to the relevant compose projects.
@@ -122,7 +130,6 @@ watchtower      → automated container updates
 
 Potential additions to the infrastructure:
 
-- Monitoring stack
 - Centralized logging
 - Off-device backup replication
 - Git remote and deployment workflow

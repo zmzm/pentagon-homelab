@@ -15,6 +15,7 @@ Most service domains are served through the Caddy reverse proxy. Local names use
 | `pihole.home.arpa` | Pi-hole | `100.126.16.76:8081` | DNS admin panel |
 | `dashboard.home.arpa` | Homepage | `homepage:3000` | Main dashboard |
 | `backrest.home.arpa` | Backrest | `backrest:9898` | Restic backup UI, Caddy internal TLS enabled |
+| `netdata.home.arpa` | Netdata | `netdata:19999` | Host and Docker monitoring, Caddy internal TLS enabled |
 | `interview-assistant.home.arpa` | Interview Assistant | `nextapp:3000` | Route exists in Caddyfile; no local app compose project is tracked |
 
 ---
@@ -36,6 +37,7 @@ pihole.home.arpa               → 100.126.16.76:8081
 interview-assistant.home.arpa  → nextapp:3000
 dashboard.home.arpa            → homepage:3000
 backrest.home.arpa             → backrest:9898
+netdata.home.arpa              → netdata:19999
 ```
 
 ---
@@ -47,6 +49,7 @@ Some services also expose host-local ports:
 | Service | Port | Notes |
 |------|------|------|
 | Pi-hole | `8081` | Host network mode |
+| Netdata | `19999` | Docker `proxy` network only |
 | Unbound | `127.0.0.1:5335` | Recursive DNS |
 | Matrix Synapse | `127.0.0.1:8008` | Local homeserver listener |
 

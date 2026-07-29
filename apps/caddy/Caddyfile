@@ -48,3 +48,8 @@ backrest.home.arpa {
         lb_try_duration 5s
     }
 }
+
+netdata.home.arpa {
+    tls internal
+    reverse_proxy netdata:19999
+}

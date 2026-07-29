@@ -32,6 +32,7 @@ apps/
 ├── cloudflared
 ├── homepage
 ├── matrix
+├── netdata
 ├── pihole
 ├── pihole-adapter
 ├── portainer
@@ -48,6 +49,7 @@ data/
 ├── cloudflared
 ├── homepage
 ├── matrix
+├── netdata
 ├── pihole
 ├── portainer
 ├── turn
@@ -78,6 +80,7 @@ Routes:
 - `interview-assistant.home.arpa` → `nextapp:3000`
 - `dashboard.home.arpa` → `homepage:3000`
 - `backrest.home.arpa` → `backrest:9898`
+- `netdata.home.arpa` → `netdata:19999`
 
 ---
 
@@ -175,6 +178,19 @@ Main service dashboard.
 - Location: `apps/homepage`
 - Config/data: `data/homepage`
 - Access: `http://dashboard.home.arpa`
+
+---
+
+## Monitoring
+
+### Netdata
+
+Host and Docker monitoring agent connected to Netdata Cloud.
+
+- Location: `apps/netdata`
+- Data: `data/netdata`
+- Access: `https://netdata.home.arpa` or Netdata Cloud
+- Secrets: `apps/netdata/.env`
 
 ---
 

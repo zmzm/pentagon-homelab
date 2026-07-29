@@ -107,12 +107,14 @@ Real environment files are local only and ignored by Git.
 Current local secret files:
 
 apps/matrix/.env
+apps/netdata/.env
 apps/pihole-adapter/.env
 apps/portainer/.env
 
 Tracked example files document required variables:
 
 apps/matrix/.env.example
+apps/netdata/.env.example
 apps/portainer/.env.example
 
 When starting a service, run Docker Compose from that service directory so the local `.env` file is loaded automatically.
@@ -121,6 +123,31 @@ Example:
 
 cd ~/Documents/homelab/apps/matrix
 docker compose up -d
+
+---
+
+# Netdata
+
+Create the local environment file from the example, then paste the claim values from Netdata Cloud:
+
+cp apps/netdata/.env.example apps/netdata/.env
+
+Start the agent:
+
+cd ~/Documents/homelab/apps/netdata
+docker compose up -d
+
+Verify local access:
+
+curl -k https://netdata.home.arpa/api/v3/info
+
+Verify Caddy can reach the container over the `proxy` network:
+
+docker exec caddy wget -S -O - --timeout=5 http://netdata:19999/api/v3/info
+
+Check Cloud claiming logs:
+
+docker logs netdata 2>&1 | grep -i CLAIM
 
 ---
 
