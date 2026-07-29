@@ -1,0 +1,22 @@
+homelab_repo_path: /home/pentagon-admin/Documents/homelab
+homelab_apps_path: "{{ homelab_repo_path }}/apps"
+homelab_data_path: "{{ homelab_repo_path }}/data"
+homelab_backups_path: "{{ homelab_repo_path }}/backups"
+
+homelab_docker_networks:
+  - proxy
+
+homelab_compose_apps:
+  - caddy
+  - unbound
+  - pihole
+  - pihole-adapter
+  - homepage
+  - portainer
+  - vaultwarden
+  - backrest
+  - matrix
+  - cloudflared
+  - turn
+  - watchtower
+  - netdata

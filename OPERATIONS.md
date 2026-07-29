@@ -100,6 +100,29 @@ docker compose up -d --force-recreate
 
 ---
 
+# Ansible
+
+Ansible is used as the migration path toward repeatable host setup and service deployment.
+
+Current first step:
+
+- Local inventory for the `pentagon` host
+- Shared homelab paths and Compose app list
+- Preflight playbook that verifies the repository path
+
+Run the preflight:
+
+sudo apt install ansible
+
+cd ~/Documents/homelab/ansible
+ansible-playbook site.yml
+
+The playbook is intentionally read-only at this stage.
+
+The first-step inventory uses `ansible_connection=local` because the playbook is currently run on the homelab host itself. Use a separate SSH inventory later when provisioning a different machine.
+
+---
+
 # Secrets
 
 Real environment files are local only and ignored by Git.

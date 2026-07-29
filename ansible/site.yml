@@ -1,0 +1,24 @@
+---
+- name: Pentagon homelab preflight
+  hosts: homelab
+  gather_facts: true
+
+  tasks:
+    - name: Check homelab repository path
+      ansible.builtin.stat:
+        path: "{{ homelab_repo_path }}"
+      register: homelab_repo
+
+    - name: Assert homelab repository exists
+      ansible.builtin.assert:
+        that:
+          - homelab_repo.stat.isdir
+        fail_msg: "Expected homelab repo at {{ homelab_repo_path }}"
+
+    - name: Show target summary
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          connection: "{{ ansible_connection }}"
+          repo: "{{ homelab_repo_path }}"
+          apps: "{{ homelab_compose_apps }}"

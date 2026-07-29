@@ -17,6 +17,7 @@ Raspberry Pi 5 based self-hosted infrastructure managed with Docker Compose.
 
 ```text
 homelab/
+├── ansible/    # host inventory and deployment automation
 ├── apps/        # Docker Compose files and app configs
 ├── backups/     # local backup repositories, not committed
 ├── data/        # persistent service data, not committed
@@ -24,6 +25,15 @@ homelab/
 ```
 
 Tracked files are intended to be reproducible service definitions and documentation. Runtime state, backups, downloaded binaries, and real `.env` files are ignored by Git.
+
+```text
+ansible/
+├── ansible.cfg
+├── group_vars/
+│   └── homelab.yml
+├── inventory.ini
+└── site.yml
+```
 
 ```text
 apps/
