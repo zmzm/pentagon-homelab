@@ -9,7 +9,6 @@ services:
     environment:
       TZ: "Europe/Warsaw"
       DNSMASQ_LISTENING: all
-      FTLCONF_dns_maxConcurrent: "500"
       FTLCONF_webserver_port: "8081o,[::]:8081o"
       FTLCONF_webserver_api_max_sessions: 64
 
