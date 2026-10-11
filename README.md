@@ -2,6 +2,9 @@
 
 Raspberry Pi 5 based self-hosted infrastructure managed with Docker Compose.
 
+<img width="1672" height="941" alt="homelab (1)" src="https://github.com/user-attachments/assets/9270ed03-cd07-43aa-a3db-a129b7234910" />
+
+
 ## Hardware
 
 - Device: Raspberry Pi 5
