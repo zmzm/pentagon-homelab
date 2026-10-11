@@ -6,7 +6,7 @@ services:
     networks:
       - proxy
     environment:
-      - HOMEPAGE_ALLOWED_HOSTS=dashboard.home.arpa
+      - HOMEPAGE_ALLOWED_HOSTS=dashboard.home.arpa, homepage:3000
     volumes:
       - /home/pentagon-admin/Documents/homelab/data/homepage/config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro

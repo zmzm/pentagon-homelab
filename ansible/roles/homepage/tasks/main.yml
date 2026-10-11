@@ -1,0 +1,70 @@
+---
+- name: Inspect Homepage recovery prerequisites
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ homelab_apps_path }}/homepage/docker-compose.yml"
+    - "{{ homelab_data_path }}/homepage/config/settings.yaml"
+    - "{{ homelab_data_path }}/homepage/config/services.yaml"
+    - "{{ homelab_data_path }}/homepage/config/widgets.yaml"
+    - "{{ homelab_data_path }}/homepage/config/docker.yaml"
+    - "{{ homelab_homepage_ca_path }}"
+  register: homelab_homepage_files
+
+- name: Require restored Homepage configuration and local Caddy CA
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isreg | default(false)
+      - not item.stat.islnk | default(false)
+    fail_msg: "Restore the required file before deploying Homepage: {{ item.item }}"
+  loop: "{{ homelab_homepage_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Require the existing proxy network
+  community.docker.docker_network_info:
+    name: proxy
+  register: homelab_homepage_network
+
+- name: Verify the proxy network exists
+  ansible.builtin.assert:
+    that:
+      - homelab_homepage_network.exists
+    fail_msg: Run prepare.yml before deploying Homepage.
+
+- name: Validate Homepage Compose definition without displaying configuration secrets
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/homepage", config, --quiet]
+  changed_when: false
+  check_mode: false
+
+- name: Deploy Homepage from its existing Compose definition
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/homepage"
+    project_name: homepage
+    files: [docker-compose.yml]
+    state: present
+    pull: missing
+    build: never
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+
+- name: Verify dashboard through DNS and Caddy with trusted local TLS
+  ansible.builtin.uri:
+    url: "{{ homelab_homepage_url }}"
+    ca_path: "{{ homelab_homepage_ca_path }}"
+    validate_certs: true
+    status_code: 200
+    follow_redirects: safe
+    use_proxy: false
+    return_content: false
+    timeout: 10
+  register: homelab_homepage_http
+  until: homelab_homepage_http.status | default(0) == 200
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode

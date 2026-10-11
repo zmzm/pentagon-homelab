@@ -1,0 +1,28 @@
+---
+- name: Inspect shared Docker networks
+  community.docker.docker_network_info:
+    name: "{{ item }}"
+  loop: "{{ homelab_docker_networks }}"
+  register: homelab_network_info
+
+- name: Verify existing shared networks use the bridge driver
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - not item.exists or item.network.Driver == 'bridge'
+    fail_msg: "Network {{ item.item }} uses an unexpected driver; inspect it manually."
+  loop: "{{ homelab_network_info.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Create missing shared networks without reconnecting existing containers
+  community.docker.docker_network:
+    name: "{{ item.item }}"
+    driver: bridge
+    state: present
+    force: false
+    appends: true
+  when: not item.exists
+  loop: "{{ homelab_network_info.results }}"
+  loop_control:
+    label: "{{ item.item }}"

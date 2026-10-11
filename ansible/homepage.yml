@@ -1,0 +1,11 @@
+---
+- name: Verify homelab before deploying Homepage
+  ansible.builtin.import_playbook: site.yml
+
+- name: Deploy and verify Homepage
+  hosts: homelab
+  gather_facts: false
+  become: true
+
+  roles:
+    - role: homepage

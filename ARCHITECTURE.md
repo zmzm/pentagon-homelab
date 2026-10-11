@@ -19,13 +19,23 @@ Clients / browsers
  ▼      ▼               ▼               ▼               ▼              ▼
 Vaultwarden        Portainer        Homepage        Backrest        Pi-hole
 (passwords)        (Docker UI)      (dashboard)     (backups)       (DNS UI)
-                                      │
-                                      ▼
-                                   Netdata
-                                 (monitoring)
 ```
 
-`interview-assistant.home.arpa` is still present in the Caddyfile and points to `nextapp:3000`, but there is no local `apps/nextapp` compose project in this repository.
+`interview-assistant.home.arpa` is still present in the Caddyfile and points to `nextapp:4000`, but there is no local `apps/nextapp` compose project in this repository.
+
+---
+
+# Public Matrix Access
+
+The home connection is behind CGNAT. Matrix HTTP traffic reaches Synapse through an outbound Cloudflare Tunnel:
+
+```text
+Matrix client → matrix.pentagonlab.org → Cloudflare → cloudflared → 127.0.0.1:8008 → Synapse → Postgres
+```
+
+The Matrix server name is `pentagonlab.org`; its public base URL is `https://matrix.pentagonlab.org/`. The tunnel route is stored in ignored `data/cloudflared/config.yml`. Matrix is separate from the Caddy routes below.
+
+Coturn and its configuration were removed on 2026-10-11. Synapse has no configured STUN/TURN endpoints, and no MatrixRTC/LiveKit backend is deployed. Legacy calling relies on direct connectivity; a public relay would be needed for calls that cannot connect directly. The existing HTTP tunnel does not provide a TURN media relay.
 
 ---
 
@@ -58,11 +68,9 @@ homelab/
 │   ├── cloudflared
 │   ├── homepage
 │   ├── matrix
-│   ├── netdata
 │   ├── pihole
 │   ├── pihole-adapter
 │   ├── portainer
-│   ├── turn
 │   ├── unbound
 │   ├── vaultwarden
 │   └── watchtower
@@ -73,7 +81,7 @@ homelab/
 
 - `apps/` contains Docker Compose projects and static configuration.
 - `data/` contains persistent service data mounted into containers.
-- `backups/` contains local backup repositories.
+- `backups/` contains the local Restic repository. A separate encrypted repository was initialized on the PNY USB drive under `homelab-backups/restic`, but its first copy was interrupted by USB I/O errors and is unverified; see [USB backup operations](OPERATIONS.md#usb-backup-copy).
 - `incidents/` contains postmortems and troubleshooting notes.
 
 `data/`, `backups/`, and real `.env` files are intentionally excluded from Git.
@@ -86,10 +94,9 @@ homelab/
 vault.home.arpa                → vaultwarden:80
 docker.home.arpa               → portainer:9000
 pihole.home.arpa               → 100.126.16.76:8081
-interview-assistant.home.arpa  → nextapp:3000
+interview-assistant.home.arpa  → nextapp:4000
 dashboard.home.arpa            → homepage:3000
 backrest.home.arpa             → backrest:9898
-netdata.home.arpa              → netdata:19999
 ```
 
 ---
@@ -106,12 +113,16 @@ portainer       → Docker management UI
 homepage        → service dashboard
 backrest        → Restic backup UI
 cloudflared     → Cloudflare tunnel
-coturn          → TURN server
 matrix-synapse  → Matrix homeserver
 matrix-postgres → Matrix database
-netdata         → host and Docker monitoring
 watchtower      → automated container updates
 ```
+
+---
+
+# Lightweight Monitoring
+
+The host timer `homelab-monitor.timer` runs a short-lived Python checker every five minutes. It reads Docker status, calls Matrix/Vaultwarden health endpoints, checks root disk space, and queries Backrest backup history over its private Docker address. State changes, recovery, and six-hour reminders are logged to journald and sent by the existing Matrix bot to a private, unencrypted **Server alerts** room. Failed deliveries persist in a queue and retry on subsequent runs. State persists under `/var/lib/homelab-monitor`. Send `!status` in **Server alerts** for a fresh health report; a separate lightweight timer checks for authorized requests every 15 seconds. Matrix PostgreSQL dumps run hourly and are checked for freshness. See [database backups](OPERATIONS.md#matrix-database-backups) and [monitoring setup](monitoring/README.md).
 
 ---
 
@@ -119,7 +130,6 @@ watchtower      → automated container updates
 
 - Internal TLS is handled by Caddy for configured routes.
 - Vaultwarden is exposed through the reverse proxy.
-- Netdata runs on the shared `proxy` network with privileged host mounts so Caddy can reach it while it collects host and Docker metrics.
 - DNS queries are filtered by Pi-hole and resolved through Unbound.
 - Docker services are split between the shared `proxy` network, service-specific networks, and host networking where required.
 - Secrets live in ignored `.env` files next to the relevant compose projects.

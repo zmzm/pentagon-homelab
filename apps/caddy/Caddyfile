@@ -22,7 +22,7 @@ pihole.home.arpa {
 }
 
 interview-assistant.home.arpa {
-    reverse_proxy nextapp:3000 {
+    reverse_proxy nextapp:4000 {
         health_uri /
         health_interval 10s
         health_timeout 5s
@@ -36,6 +36,9 @@ dashboard.home.arpa {
         health_interval 10s
         health_timeout 5s
         lb_try_duration 5s
+	health_headers {
+		Host dashboard.home.arpa
+	}
     }
 }
 
@@ -47,9 +50,4 @@ backrest.home.arpa {
         health_timeout 5s
         lb_try_duration 5s
     }
-}
-
-netdata.home.arpa {
-    tls internal
-    reverse_proxy netdata:19999
 }

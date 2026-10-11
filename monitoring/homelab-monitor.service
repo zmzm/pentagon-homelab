@@ -1,0 +1,21 @@
+[Unit]
+Description=Lightweight homelab health and backup checks
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B /home/pentagon-admin/Documents/homelab/scripts/monitor.py
+StateDirectory=homelab-monitor
+StateDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=90
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true

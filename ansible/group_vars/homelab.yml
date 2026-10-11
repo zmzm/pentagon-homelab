@@ -3,6 +3,46 @@ homelab_apps_path: "{{ homelab_repo_path }}/apps"
 homelab_data_path: "{{ homelab_repo_path }}/data"
 homelab_backups_path: "{{ homelab_repo_path }}/backups"
 
+homelab_owner: pentagon-admin
+homelab_group: pentagon-admin
+
+homelab_homepage_url: https://dashboard.home.arpa
+homelab_homepage_ca_path: "{{ homelab_data_path }}/caddy/data/caddy/pki/authorities/local/root.crt"
+
+# Docker's Debian apt repository must already be configured for these packages.
+homelab_prerequisite_packages:
+  - docker-ce
+  - docker-ce-cli
+  - docker-compose-plugin
+  - git
+  - curl
+  - bind9-dnsutils
+  - btop
+  - restic
+  - python3-requests
+
+# Ownership/modes apply only to newly created directories.
+homelab_directories:
+  - path: "{{ homelab_data_path }}"
+  - path: "{{ homelab_backups_path }}"
+  - path: "{{ homelab_data_path }}/caddy"
+  - path: "{{ homelab_data_path }}/cloudflared"
+  - path: "{{ homelab_data_path }}/homepage"
+  - path: "{{ homelab_data_path }}/matrix"
+  - path: "{{ homelab_data_path }}/pihole"
+  - path: "{{ homelab_data_path }}/portainer"
+  - path: "{{ homelab_data_path }}/unbound"
+  - path: "{{ homelab_data_path }}/vaultwarden"
+  - path: "{{ homelab_data_path }}/backrest"
+  - path: "{{ homelab_data_path }}/monitoring"
+    owner: root
+    group: root
+    mode: '0700'
+  - path: "{{ homelab_data_path }}/matrix/database-backup"
+    owner: root
+    group: root
+    mode: '0700'
+
 homelab_docker_networks:
   - proxy
 
@@ -17,6 +57,4 @@ homelab_compose_apps:
   - backrest
   - matrix
   - cloudflared
-  - turn
   - watchtower
-  - netdata

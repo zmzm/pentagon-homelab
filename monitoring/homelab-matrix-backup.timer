@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly consistent Matrix database dump
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=3min
+Persistent=true
+Unit=homelab-matrix-backup.service
+
+[Install]
+WantedBy=timers.target

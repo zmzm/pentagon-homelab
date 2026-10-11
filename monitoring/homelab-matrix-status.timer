@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Matrix for server status requests
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=homelab-matrix-status.service
+
+[Install]
+WantedBy=timers.target

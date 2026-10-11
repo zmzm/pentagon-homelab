@@ -1,0 +1,53 @@
+{
+  "reminder_hours": 6,
+  "disk": {
+    "path": "/",
+    "warning_percent": 85,
+    "critical_percent": 95,
+    "minimum_free_gib": 2
+  },
+  "containers": [
+    "caddy",
+    "unbound",
+    "pihole",
+    "pihole-adapter",
+    "homepage",
+    "portainer",
+    "vaultwarden",
+    "backrest",
+    "matrix-synapse",
+    "matrix-postgres",
+    "cloudflared",
+    "watchtower"
+  ],
+  "http": [
+    {
+      "id": "matrix",
+      "url": "http://127.0.0.1:8008/health",
+      "expected": "OK"
+    },
+    {
+      "id": "vaultwarden",
+      "url": "https://vault.home.arpa/alive",
+      "resolve": "vault.home.arpa:443:127.0.0.1",
+      "ca_file": "data/caddy/data/caddy/pki/authorities/local/root.crt"
+    }
+  ],
+  "backrest": {
+    "container": "backrest",
+    "network": "proxy",
+    "plan": "pentagon-backup",
+    "maximum_age_hours": 36
+  },
+  "notification": {
+    "type": "matrix",
+    "credentials_file": "data/monitoring/matrix.json",
+    "allowed_users": [
+      "@vladjik:pentagonlab.org"
+    ]
+  },
+  "database_dump": {
+    "path": "data/matrix/database-backup/synapse.dump",
+    "maximum_age_hours": 2
+  }
+}

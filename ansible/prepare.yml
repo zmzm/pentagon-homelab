@@ -1,0 +1,17 @@
+---
+- name: Verify homelab before preparing the host
+  ansible.builtin.import_playbook: site.yml
+  tags: [always]
+
+- name: Prepare homelab host without deploying applications
+  hosts: homelab
+  gather_facts: true
+  become: true
+
+  roles:
+    - role: host_prerequisites
+      tags: [prerequisites]
+    - role: directory_layout
+      tags: [directories]
+    - role: docker_networks
+      tags: [networks]

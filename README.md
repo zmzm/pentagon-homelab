@@ -42,11 +42,9 @@ apps/
 ├── cloudflared
 ├── homepage
 ├── matrix
-├── netdata
 ├── pihole
 ├── pihole-adapter
 ├── portainer
-├── turn
 ├── unbound
 ├── vaultwarden
 └── watchtower
@@ -59,10 +57,8 @@ data/
 ├── cloudflared
 ├── homepage
 ├── matrix
-├── netdata
 ├── pihole
 ├── portainer
-├── turn
 ├── unbound
 └── vaultwarden
 ```
@@ -80,17 +76,16 @@ Handles internal routing and TLS for selected services.
 - Location: `apps/caddy`
 - Data: `data/caddy`
 - Network: `proxy`
-- Public ports: `80`, `443`
+- Host ports: `80`, `443` (home connection is behind CGNAT)
 
 Routes:
 
 - `vault.home.arpa` → `vaultwarden:80`
 - `docker.home.arpa` → `portainer:9000`
 - `pihole.home.arpa` → `100.126.16.76:8081`
-- `interview-assistant.home.arpa` → `nextapp:3000`
+- `interview-assistant.home.arpa` → `nextapp:4000`
 - `dashboard.home.arpa` → `homepage:3000`
 - `backrest.home.arpa` → `backrest:9898`
-- `netdata.home.arpa` → `netdata:19999`
 
 ---
 
@@ -102,8 +97,10 @@ Restic backup UI.
 
 - Location: `apps/backrest`
 - Data: `data/backrest`
-- Backup repositories: `backups/`
+- Local backup repository: `backups/restic`
+- External encrypted copy: PNY USB drive, `homelab-backups/restic` — incomplete after USB I/O errors ([copy procedure](OPERATIONS.md#usb-backup-copy))
 - Access: `http://backrest.home.arpa`
+- Recovery verification: [latest report](reports/2026-10-11-backup-recovery.md) and [repeatable test](scripts/verify-backup.py)
 
 ---
 
@@ -155,14 +152,8 @@ Cloudflare tunnel container.
 - Location: `apps/cloudflared`
 - Data/config: `data/cloudflared`
 - Network mode: `host`
-
-### Coturn
-
-TURN server.
-
-- Location: `apps/turn`
-- Config/data: `data/turn`
-- Network mode: `host`
+- Matrix route: `matrix.pentagonlab.org` → `http://127.0.0.1:8008`
+- Public HTTP access works through the outbound tunnel behind CGNAT.
 
 ---
 
@@ -193,14 +184,7 @@ Main service dashboard.
 
 ## Monitoring
 
-### Netdata
-
-Host and Docker monitoring agent connected to Netdata Cloud.
-
-- Location: `apps/netdata`
-- Data: `data/netdata`
-- Access: `https://netdata.home.arpa` or Netdata Cloud
-- Secrets: `apps/netdata/.env`
+Lightweight checks run every five minutes through `homelab-monitor.timer`. They check disk space, managed containers, Matrix/Vaultwarden health, and Backrest backup results. Alerts go to the private, unencrypted Matrix room **Server alerts** through `@homelab:pentagonlab.org`, with local journal logging as well. Send `!status` in **Server alerts** for a fresh health report; a separate lightweight timer checks for authorized requests every 15 seconds. Matrix PostgreSQL dumps run hourly and are checked for freshness. See [database backups](OPERATIONS.md#matrix-database-backups) and [monitoring setup](monitoring/README.md).
 
 ---
 
@@ -212,8 +196,13 @@ Matrix homeserver backed by Postgres.
 
 - Location: `apps/matrix`
 - Data: `data/matrix`
+- Public URL: `https://matrix.pentagonlab.org` through Cloudflare Tunnel
+- Server name / user ID domain: `pentagonlab.org`
 - Local Synapse port: `127.0.0.1:8008`
+- Runtime config: `data/matrix/synapse/homeserver.yaml` (ignored by Git)
 - Secrets: `apps/matrix/.env`
+
+Coturn was removed on 2026-10-11 because the home connection is behind CGNAT and has no configured public TURN endpoint. Synapse no longer advertises the Google STUN server or any TURN server. Legacy clients can still message; direct calls may connect, but calls requiring a relay will fail. No MatrixRTC/LiveKit backend is deployed. See [Matrix operations](OPERATIONS.md#matrix) for configuration and checks.
 
 ---
 
@@ -233,7 +222,6 @@ Automatic Docker image updater for containers with the Watchtower label enabled.
 Real `.env` files are intentionally ignored. Example files document required variables:
 
 - `apps/matrix/.env.example`
-- `apps/netdata/.env.example`
 - `apps/portainer/.env.example`
 
 Ignored sensitive/runtime paths include:
@@ -250,3 +238,5 @@ Ignored sensitive/runtime paths include:
 # 📋 Incidents
 
 Operational issues and resolutions are documented in `incidents/`.
+
+Ansible host preparation now covers prerequisite packages, missing directories, and missing shared Docker networks. See [Ansible usage](ansible/README.md). Homepage deployment and HTTPS health verification are available through `ansible/homepage.yml`; other service deployments remain manual.

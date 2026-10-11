@@ -48,7 +48,6 @@ Affected services:
 - Pi-hole
 - Unbound
 - Caddy
-- Netdata
 - etc
 
 ---
@@ -81,7 +80,7 @@ Examples:
 
 Command used:
 
-curl -k https://netdata.home.arpa/api/v3/info
+curl -fsS http://127.0.0.1:8008/health
 
 or
 
@@ -119,7 +118,7 @@ docker logs pihole
 
 Check monitoring:
 
-curl -k https://netdata.home.arpa/api/v3/info
+curl -fsS http://127.0.0.1:8008/health
 
 Test DNS:
 
@@ -175,7 +174,7 @@ What did we learn from this incident?
 Examples:
 
 - DNS loops are easy to create with incorrect upstream configuration
-- Netdata monitoring helps detect service, host, and resource problems faster
+- Targeted health checks help detect service problems
 
 ---
 
@@ -186,7 +185,7 @@ Steps to prevent similar incidents in the future.
 Examples:
 
 - Document DNS configuration
-- Add or tune Netdata monitoring
+- Add alerts for failed backups, low disk space, and unavailable services
 - Add automated health checks
 
 ---
@@ -200,4 +199,3 @@ Examples:
 - apps/pihole
 - apps/unbound
 - apps/caddy/Caddyfile
-- apps/netdata
