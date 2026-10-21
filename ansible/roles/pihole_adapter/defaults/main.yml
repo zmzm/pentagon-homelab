@@ -1,0 +1,4 @@
+---
+# Compose builds a missing image; reuse an existing image by default.
+# Use -e homelab_pihole_adapter_build=always after changing application sources.
+homelab_pihole_adapter_build: policy

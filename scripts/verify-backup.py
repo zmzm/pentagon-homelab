@@ -2,7 +2,7 @@
 """Restore the newest Backrest snapshot into private temporary storage and verify it.
 
 Run from any directory with sudo. Credentials stay in the child process environment.
-This tests file recovery and Vaultwarden SQLite integrity, not a full service rebuild.
+Optional Matrix checks test database recovery or isolated Synapse startup.
 """
 import argparse
 import json
@@ -16,13 +16,16 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def main():
+def main(argv=None):
     if os.geteuid() != 0:
         raise SystemExit('Run with sudo to read Backrest credentials and restore ownership.')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--usb', action='store_true', help='Test the identified USB repository')
     parser.add_argument('--matrix-db', action='store_true', help='Also restore the saved PostgreSQL dump into an isolated container')
-    args = parser.parse_args()
+    parser.add_argument('--matrix-app', action='store_true', help='Also start restored Synapse with no external network or published ports')
+    parser.add_argument('--matrix-workflows', action='store_true', help='Also test disposable-account login, messaging and media in isolated restored Synapse')
+    parser.add_argument('--vaultwarden-app', action='store_true', help='Also start isolated restored Vaultwarden and test a synthetic account and encrypted item')
+    args = parser.parse_args(argv)
     config = json.loads((ROOT / 'data/backrest/config/config.json').read_text())
     repo = next(r for r in config['repos'] if r['id'] == 'home-lab')
     if repo['uri'] != '/repos/restic' or repo.get('commandPrefix'):
@@ -79,7 +82,14 @@ def main():
                 raise RuntimeError('Restored Vaultwarden database failed integrity check.')
         print('PASS: full restore verified; required recovery files present; '
               'Vaultwarden SQLite integrity OK.', flush=True)
-        if args.matrix_db:
+        if args.vaultwarden_app:
+            from verify_vaultwarden_app import verify
+            verify(restored)
+        if args.matrix_app or args.matrix_workflows:
+            from verify_matrix_app import verify
+            verify(restored, workflows=args.matrix_workflows)
+            print('LIMIT: replacement-host provisioning, real-user encrypted content and external backup recovery are not tested.', flush=True)
+        elif args.matrix_db:
             from verify_matrix_db import verify
             verify(restored / 'data/matrix/database-backup/synapse.dump')
             print('LIMIT: full Synapse application startup and external backup recovery are not tested.', flush=True)

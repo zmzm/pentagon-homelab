@@ -1,0 +1,11 @@
+---
+- name: Verify homelab before deploying Watchtower
+  ansible.builtin.import_playbook: site.yml
+
+- name: Deploy and verify Watchtower
+  hosts: homelab
+  gather_facts: false
+  become: true
+
+  roles:
+    - role: watchtower

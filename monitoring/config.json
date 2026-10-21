@@ -46,6 +46,11 @@
       "@vladjik:pentagonlab.org"
     ]
   },
+  "recovery_test": {
+    "status_file": "/var/lib/homelab-recovery/status.json",
+    "maximum_age_hours": 192,
+    "maximum_running_minutes": 35
+  },
   "database_dump": {
     "path": "data/matrix/database-backup/synapse.dump",
     "maximum_age_hours": 2

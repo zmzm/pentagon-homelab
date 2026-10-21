@@ -1,0 +1,226 @@
+---
+- name: Inspect restored tunnel directory
+  ansible.builtin.stat:
+    path: "{{ homelab_data_path }}/cloudflared"
+    follow: false
+  register: homelab_cloudflared_directory
+
+- name: Require the restored tunnel directory
+  ansible.builtin.assert:
+    that:
+      - homelab_cloudflared_directory.stat.isdir | default(false)
+      - not (homelab_cloudflared_directory.stat.islnk | default(false))
+    fail_msg: Restore data/cloudflared before deploying the tunnel.
+
+- name: Inspect tunnel configuration and Compose definition
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ homelab_apps_path }}/cloudflared/docker-compose.yml"
+    - "{{ homelab_data_path }}/cloudflared/config.yml"
+  register: homelab_cloudflared_files
+
+- name: Require nonempty restored tunnel configuration
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.size | default(0) > 0
+    fail_msg: "Restore the required tunnel file before deployment: {{ item.item }}"
+  loop: "{{ homelab_cloudflared_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate saved tunnel identity, credentials and Matrix routing privately
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        import base64, json, pathlib, sys, uuid, urllib.parse, yaml
+        folder = pathlib.Path(sys.argv[1]).resolve()
+        with (folder / 'config.yml').open() as source:
+            config = yaml.safe_load(source)
+        tunnel = str(uuid.UUID(str(config['tunnel'])))
+        relative = pathlib.PurePosixPath(config['credentials-file']).relative_to('/etc/cloudflared')
+        assert relative.parts and '..' not in relative.parts
+        path = folder.joinpath(*relative.parts)
+        assert path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(folder)
+        with path.open() as source:
+            credentials = json.load(source)
+        assert str(uuid.UUID(credentials['TunnelID'])) == tunnel, 'Tunnel identity does not match credentials'
+        assert credentials.get('AccountTag') and isinstance(credentials.get('TunnelSecret'), str)
+        assert len(base64.b64decode(credentials['TunnelSecret'], validate=True)) == 32, 'Invalid tunnel secret'
+        rules = config['ingress']
+        hostname = urllib.parse.urlsplit(sys.argv[2]).hostname
+        assert hostname and urllib.parse.urlsplit(sys.argv[2]).scheme == 'https'
+        matches = [rule for rule in rules if rule.get('hostname') == hostname]
+        assert len(matches) == 1 and matches[0]['service'] == sys.argv[3] and not matches[0].get('path')
+        assert not rules[-1].get('hostname') and not rules[-1].get('path') and rules[-1]['service'] == 'http_status:404'
+        assert config.get('metrics', sys.argv[4]) == sys.argv[4], 'Review conflicting metrics configuration'
+        print(json.dumps({'credentials_file': str(path)}))
+      - "{{ homelab_data_path }}/cloudflared"
+      - "{{ homelab_cloudflared_matrix_url }}"
+      - "{{ homelab_cloudflared_matrix_origin }}"
+      - "{{ homelab_cloudflared_metrics_address }}"
+  register: homelab_cloudflared_recovery
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Validate Cloudflared Compose without exposing configuration
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/cloudflared", config, --format, json]
+  register: homelab_cloudflared_compose
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Require host networking, restored read-only mount and loopback metrics
+  ansible.builtin.assert:
+    that:
+      - homelab_cloudflared_service.image == homelab_cloudflared_image
+      - homelab_cloudflared_service.network_mode == 'host'
+      - homelab_cloudflared_service.volumes | length == 1
+      - homelab_cloudflared_service.volumes[0].type == 'bind'
+      - homelab_cloudflared_service.volumes[0].source == homelab_data_path ~ '/cloudflared'
+      - homelab_cloudflared_service.volumes[0].target == '/etc/cloudflared'
+      - homelab_cloudflared_service.volumes[0].read_only
+      - homelab_cloudflared_metrics_address == '127.0.0.1:20241'
+      - homelab_cloudflared_service.command == ['tunnel', '--config', '/etc/cloudflared/config.yml', '--metrics', homelab_cloudflared_metrics_address, 'run']
+      - homelab_cloudflared_service.user | default(homelab_cloudflared_uid ~ ':' ~ homelab_cloudflared_gid) == homelab_cloudflared_uid ~ ':' ~ homelab_cloudflared_gid
+      - homelab_cloudflared_service.environment | default({}) | list | intersect(['TUNNEL_TOKEN', 'TUNNEL_TOKEN_FILE', 'TUNNEL_CRED_FILE', 'TUNNEL_CONFIG']) | length == 0
+    fail_msg: Review tunnel Compose networking, command, credentials overrides and data mount before deployment.
+  vars:
+    homelab_cloudflared_service: "{{ (homelab_cloudflared_compose.stdout | from_json).services.cloudflared }}"
+
+- name: Verify the local Matrix origin before reconciling the tunnel
+  ansible.builtin.uri:
+    url: "{{ homelab_cloudflared_matrix_origin }}/health"
+    use_proxy: false
+    status_code: 200
+    return_content: true
+    timeout: 10
+  register: homelab_cloudflared_origin
+  until: homelab_cloudflared_origin.status | default(0) == 200 and homelab_cloudflared_origin.content | default('') | trim == 'OK'
+  retries: 6
+  delay: 5
+  when: not ansible_check_mode
+
+- name: Inspect the installed tunnel image
+  community.docker.docker_image_info:
+    name: "{{ homelab_cloudflared_image }}"
+  register: homelab_cloudflared_image_info
+
+- name: Obtain Cloudflared only if the image is missing
+  community.docker.docker_image:
+    name: "{{ homelab_cloudflared_image }}"
+    source: pull
+    force_source: false
+
+- name: Inspect the image after obtaining a missing local copy
+  community.docker.docker_image_info:
+    name: "{{ homelab_cloudflared_image }}"
+  register: homelab_cloudflared_image_info
+
+- name: Verify the expected non-root image identity
+  ansible.builtin.assert:
+    that:
+      - homelab_cloudflared_image_info.images[0].Config.User == homelab_cloudflared_uid ~ ':' ~ homelab_cloudflared_gid
+    fail_msg: Review the tunnel image's service identity before applying file permissions.
+  when: homelab_cloudflared_image_info.images | length > 0
+
+- name: Restrict tunnel directory access to its owner and service group
+  ansible.builtin.file:
+    path: "{{ homelab_data_path }}/cloudflared"
+    state: directory
+    group: "{{ homelab_cloudflared_gid }}"
+    mode: '0750'
+
+- name: Restrict tunnel configuration and credential access
+  ansible.builtin.file:
+    path: "{{ item }}"
+    group: "{{ homelab_cloudflared_gid }}"
+    mode: '0640'
+  loop:
+    - "{{ homelab_data_path }}/cloudflared/config.yml"
+    - "{{ (homelab_cloudflared_recovery.stdout | from_json).credentials_file }}"
+  no_log: true
+
+- name: Validate ingress in a disposable container without network access
+  ansible.builtin.command:
+    argv: [docker, run, --rm, --network, none, --user, "{{ homelab_cloudflared_uid }}:{{ homelab_cloudflared_gid }}", --mount, "type=bind,src={{ homelab_data_path }}/cloudflared,dst=/etc/cloudflared,readonly", --entrypoint, cloudflared, "{{ homelab_cloudflared_image }}", tunnel, --config, /etc/cloudflared/config.yml, ingress, validate]
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: not ansible_check_mode or homelab_cloudflared_image_info.images | length > 0
+
+- name: Check which ingress rule matches the Matrix client API
+  ansible.builtin.command:
+    argv: [docker, run, --rm, --network, none, --user, "{{ homelab_cloudflared_uid }}:{{ homelab_cloudflared_gid }}", --mount, "type=bind,src={{ homelab_data_path }}/cloudflared,dst=/etc/cloudflared,readonly", --entrypoint, cloudflared, "{{ homelab_cloudflared_image }}", tunnel, --config, /etc/cloudflared/config.yml, ingress, rule, "{{ homelab_cloudflared_matrix_url }}/_matrix/client/versions"]
+  register: homelab_cloudflared_rule
+  changed_when: false
+  check_mode: false
+  failed_when: >-
+    homelab_cloudflared_rule.rc != 0 or
+    ('service: ' ~ homelab_cloudflared_matrix_origin) not in (homelab_cloudflared_rule.stdout.splitlines() | map('trim') | list)
+  no_log: true
+  when: not ansible_check_mode or homelab_cloudflared_image_info.images | length > 0
+
+- name: Deploy the existing named tunnel from its validated Compose definition
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/cloudflared"
+    project_name: cloudflared
+    files: [docker-compose.yml]
+    state: present
+    pull: missing
+    build: never
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+  no_log: true
+
+- name: Verify this connector is ready through its loopback metrics listener
+  ansible.builtin.uri:
+    url: "http://{{ homelab_cloudflared_metrics_address }}/ready"
+    use_proxy: false
+    status_code: 200
+    timeout: 5
+  register: homelab_cloudflared_ready
+  until: homelab_cloudflared_ready.status | default(0) == 200
+  retries: 20
+  delay: 3
+  when: not ansible_check_mode
+
+- name: Verify public Matrix client access with trusted TLS
+  ansible.builtin.uri:
+    url: "{{ homelab_cloudflared_matrix_url }}/_matrix/client/versions"
+    validate_certs: true
+    follow_redirects: none
+    use_proxy: false
+    status_code: 200
+    timeout: 15
+  register: homelab_cloudflared_matrix
+  until: homelab_cloudflared_matrix.status | default(0) == 200 and homelab_cloudflared_matrix.json.versions | default([]) | length > 0
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode
+
+- name: Verify existing additional public routes with trusted TLS
+  ansible.builtin.uri:
+    url: "{{ item }}"
+    validate_certs: true
+    follow_redirects: safe
+    use_proxy: false
+    status_code: 200
+    timeout: 15
+  loop: "{{ homelab_cloudflared_extra_public_urls }}"
+  register: homelab_cloudflared_extra
+  until: homelab_cloudflared_extra.status | default(0) == 200
+  retries: 6
+  delay: 5
+  when: not ansible_check_mode

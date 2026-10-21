@@ -1,0 +1,5 @@
+---
+# Import the EXISTING database password locally; this does not rotate it.
+# Prefer import-matrix-vault.py to avoid writing another plaintext copy.
+# Never commit a plaintext password or supply it as a command-line argument.
+vault_matrix_postgres_password: REPLACE_WITH_EXISTING_PASSWORD

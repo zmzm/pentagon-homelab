@@ -2,6 +2,7 @@
 """Restore a Matrix dump into an isolated temporary PostgreSQL container."""
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import time
@@ -14,18 +15,23 @@ def run(command, **kwargs):
     return subprocess.run(command, check=True, timeout=180, capture_output=True, **kwargs)
 
 
-def verify(dump):
+def verify(dump, application_check=None, postgres_password=None):
     image = run(['docker', 'inspect', 'matrix-postgres', '--format', '{{.Image}}'], text=True).stdout.strip()
     name = 'matrix-restore-test-' + uuid.uuid4().hex[:12]
     created = False
     try:
+        authentication = ['--env', 'POSTGRES_HOST_AUTH_METHOD=trust']
+        environment = os.environ.copy()
+        if postgres_password is not None:
+            authentication = ['--env', 'POSTGRES_PASSWORD']
+            environment['POSTGRES_PASSWORD'] = postgres_password
         run(['docker', 'run', '--detach', '--name', name, '--network', 'none',
              '--label', 'com.centurylinklabs.watchtower.enable=false',
              '--memory', '768m', '--cpus', '1',
              '--tmpfs', '/var/lib/postgresql/data:rw,size=512m',
-             '--env', 'POSTGRES_HOST_AUTH_METHOD=trust',
              '--env', 'POSTGRES_USER=synapse', '--env', 'POSTGRES_DB=synapse',
-             '--env', 'POSTGRES_INITDB_ARGS=--locale=C --encoding=UTF8', image])
+             '--env', 'POSTGRES_INITDB_ARGS=--locale=C --encoding=UTF8',
+             *authentication, image], env=environment)
         created = True
         for attempt in range(60):
             ready = subprocess.run(['docker', 'exec', name, 'pg_isready', '-U', 'synapse', '-d', 'synapse'],
@@ -51,6 +57,8 @@ def verify(dump):
         if stats['tables'] < 100 or min(stats['users'], stats['rooms'], stats['events']) < 1:
             raise RuntimeError('Restored database is missing expected Matrix data')
         print('PASS: isolated PostgreSQL restore and Matrix data checks: ' + json.dumps(stats), flush=True)
+        if application_check is not None:
+            application_check(name)
         return stats
     finally:
         if created:

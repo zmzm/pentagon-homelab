@@ -1,0 +1,200 @@
+---
+- name: Inspect restored Caddy runtime directories
+  ansible.builtin.stat:
+    path: "{{ homelab_data_path }}/caddy/{{ item }}"
+    follow: false
+  loop: [data, config]
+  register: homelab_caddy_directories
+
+- name: Require restored Caddy runtime directories
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isdir | default(false)
+      - not (item.stat.islnk | default(false))
+    fail_msg: Restore both Caddy runtime directories before deployment.
+  loop: "{{ homelab_caddy_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect versioned Caddy configuration and restored CA files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    checksum_algorithm: sha256
+  loop:
+    - "{{ homelab_apps_path }}/caddy/docker-compose.yml"
+    - "{{ homelab_apps_path }}/caddy/Caddyfile"
+    - "{{ homelab_caddy_ca_directory }}/root.crt"
+    - "{{ homelab_caddy_ca_directory }}/root.key"
+    - "{{ homelab_caddy_ca_directory }}/intermediate.crt"
+    - "{{ homelab_caddy_ca_directory }}/intermediate.key"
+  register: homelab_caddy_files
+
+- name: Require nonempty Caddy configuration and the existing CA chain and keys
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.size | default(0) > 0
+    fail_msg: "Restore the required file before deploying Caddy: {{ item.item }}"
+  loop: "{{ homelab_caddy_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Require Caddy's standard CA location within its data mount
+  ansible.builtin.assert:
+    that:
+      - homelab_caddy_ca_directory == homelab_data_path ~ '/caddy/data/caddy/pki/authorities/local'
+    fail_msg: Review Caddy's data mount and CA checks together when changing storage layout.
+
+- name: Inspect the shared proxy network
+  community.docker.docker_network_info:
+    name: proxy
+  register: homelab_caddy_network
+
+- name: Require the existing shared bridge network
+  ansible.builtin.assert:
+    that:
+      - homelab_caddy_network.exists
+      - homelab_caddy_network.network.Driver == 'bridge'
+    fail_msg: Run prepare.yml before deploying Caddy.
+
+- name: Validate and read Caddy Compose configuration
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/caddy", config, --format, json]
+  changed_when: false
+  check_mode: false
+  register: homelab_caddy_compose
+  no_log: true
+
+- name: Require the validated Caddy mounts and external shared network
+  ansible.builtin.assert:
+    that:
+      - homelab_caddy_config.services.caddy.image == homelab_caddy_image
+      - homelab_caddy_config.networks.proxy.external | default(false)
+      - homelab_caddy_config.networks.proxy.name == 'proxy'
+      - homelab_caddy_mounts | selectattr('target', 'equalto', item.target) | map(attribute='source') | list == [item.source]
+      - homelab_caddy_mounts | selectattr('target', 'equalto', item.target) | map(attribute='type') | list == ['bind']
+      - homelab_caddy_mounts | selectattr('target', 'equalto', item.target) | map(attribute='read_only', default=false) | list == [item.read_only]
+  vars:
+    homelab_caddy_config: "{{ homelab_caddy_compose.stdout | from_json }}"
+    homelab_caddy_mounts: "{{ homelab_caddy_config.services.caddy.volumes }}"
+  loop:
+    - {target: /etc/caddy/Caddyfile, source: "{{ homelab_apps_path }}/caddy/Caddyfile", read_only: true}
+    - {target: /data, source: "{{ homelab_data_path }}/caddy/data", read_only: false}
+    - {target: /config, source: "{{ homelab_data_path }}/caddy/config", read_only: false}
+  loop_control:
+    label: "{{ item.target }}"
+
+- name: Inspect the installed Caddy image
+  community.docker.docker_image_info:
+    name: "{{ homelab_caddy_image }}"
+  register: homelab_caddy_image_info
+
+- name: Download Caddy only if the image is missing
+  community.docker.docker_image:
+    name: "{{ homelab_caddy_image }}"
+    source: pull
+    force_source: false
+
+- name: Validate Caddy configuration in a disposable container with read-only state
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - proxy
+      - --mount
+      - "type=bind,src={{ homelab_apps_path }}/caddy/Caddyfile,dst=/etc/caddy/Caddyfile,readonly"
+      - --mount
+      - "type=bind,src={{ homelab_data_path }}/caddy/data,dst=/data,readonly"
+      - --mount
+      - "type=bind,src={{ homelab_data_path }}/caddy/config,dst=/config,readonly"
+      - --entrypoint
+      - caddy
+      - "{{ homelab_caddy_image }}"
+      - validate
+      - --config
+      - /etc/caddy/Caddyfile
+      - --adapter
+      - caddyfile
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: not ansible_check_mode or homelab_caddy_image_info.images | length > 0
+
+- name: Inspect the existing Caddy container
+  community.docker.docker_container_info:
+    name: caddy
+  register: homelab_caddy_existing
+  no_log: true
+
+- name: Detect a stale file bind mount before reconciling Caddy
+  ansible.builtin.command:
+    argv: [docker, exec, caddy, sha256sum, /etc/caddy/Caddyfile]
+  register: homelab_caddy_mounted_checksum
+  changed_when: false
+  check_mode: false
+  when:
+    - homelab_caddy_existing.exists
+    - homelab_caddy_existing.container.State.Running | default(false)
+
+- name: Deploy Caddy from its validated Compose definition
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/caddy"
+    project_name: caddy
+    files: [docker-compose.yml]
+    state: present
+    pull: missing
+    build: never
+    recreate: "{{ 'always' if homelab_caddy_mounted_checksum.stdout is defined and homelab_caddy_mounted_checksum.stdout.split()[0] != homelab_caddy_files.results[1].stat.checksum else 'auto' }}"
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+  no_log: true
+
+- name: Adapt the deployed Caddyfile to JSON
+  ansible.builtin.command:
+    argv: [docker, exec, caddy, caddy, adapt, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+  register: homelab_caddy_desired_config
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Read the active configuration through Caddy's container-local admin API
+  ansible.builtin.command:
+    argv: [docker, exec, caddy, wget, -q, -O, '-', 'http://127.0.0.1:2019/config/']
+  register: homelab_caddy_active_config
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Gracefully reload Caddy only when the active configuration differs
+  ansible.builtin.command:
+    argv: [docker, exec, caddy, caddy, reload, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+  changed_when: true
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - (homelab_caddy_desired_config.stdout | from_json) != (homelab_caddy_active_config.stdout | from_json)
+
+- name: Verify configured HTTPS routes through host DNS with the restored CA
+  ansible.builtin.uri:
+    url: "{{ item }}"
+    ca_path: "{{ homelab_caddy_ca_directory }}/root.crt"
+    validate_certs: true
+    follow_redirects: safe
+    use_proxy: false
+    status_code: 200
+    timeout: 10
+  loop: "{{ homelab_caddy_route_checks }}"
+  register: homelab_caddy_http
+  until: homelab_caddy_http.status | default(0) == 200
+  retries: 12
+  delay: 5
+  when:
+    - not ansible_check_mode
+    - homelab_caddy_check_routes | bool

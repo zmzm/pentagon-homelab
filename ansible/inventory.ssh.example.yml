@@ -1,0 +1,24 @@
+---
+# Copy to inventory.ssh.yml (ignored by Git), then fill in the target details.
+# This file is never selected by the default local inventory.
+homelab:
+  children:
+    homelab_replacement:
+      hosts:
+        replacement:
+          ansible_connection: ssh
+          ansible_host: REPLACE_WITH_SSH_HOST
+          ansible_port: 22
+          ansible_user: REPLACE_WITH_SSH_USER
+          ansible_python_interpreter: /usr/bin/python3
+          ansible_ssh_host_key_checking: true
+          # Use ssh-agent, or uncomment an existing private key path:
+          # ansible_ssh_private_key_file: /absolute/path/to/private_key
+          # Read these on the target's trusted console before connecting:
+          homelab_expected_hostname: REPLACE_WITH_HOSTNAME
+          homelab_expected_machine_id: REPLACE_WITH_MACHINE_ID
+          # Existing Compose binds currently use this account and path.
+          # Changing these requires reviewing the Compose definitions too.
+          homelab_owner: pentagon-admin
+          homelab_group: pentagon-admin
+          homelab_repo_path: /home/pentagon-admin/Documents/homelab

@@ -1,0 +1,9 @@
+---
+homelab_matrix_server_name: pentagonlab.org
+homelab_matrix_public_url: https://matrix.pentagonlab.org
+homelab_matrix_check_public: true
+homelab_matrix_postgres_image: postgres:16-alpine
+homelab_matrix_postgres_major: '16'
+homelab_matrix_synapse_image: matrixdotorg/synapse:latest
+homelab_matrix_synapse_uid: 991
+homelab_matrix_network_name: matrix-network

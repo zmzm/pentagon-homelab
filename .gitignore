@@ -14,6 +14,8 @@
 !*.env.example
 *.secret
 *.secrets
+/ansible/vars/*.vault.yml
+/ansible/inventory.ssh.yml
 *secret*
 *secrets*
 *credential*

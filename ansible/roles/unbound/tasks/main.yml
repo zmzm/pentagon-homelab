@@ -1,0 +1,79 @@
+---
+- name: Inspect versioned Unbound configuration
+  ansible.builtin.stat:
+    path: "{{ homelab_apps_path }}/unbound/{{ item }}"
+    follow: false
+  loop: [docker-compose.yml, unbound.conf]
+  register: homelab_unbound_files
+
+- name: Require nonempty regular Unbound files
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.size | default(0) > 0
+    fail_msg: Restore the versioned Unbound Compose and configuration files first.
+  loop: "{{ homelab_unbound_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate and inspect Unbound Compose
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/unbound", config, --format, json]
+  changed_when: false
+  check_mode: false
+  register: homelab_unbound_compose
+
+- name: Require Compose to use the checked Unbound configuration
+  ansible.builtin.assert:
+    that:
+      - homelab_unbound_service.image == homelab_unbound_image
+      - homelab_unbound_service.volumes | selectattr('target', 'equalto', '/opt/unbound/etc/unbound/unbound.conf') | map(attribute='source') | list == [homelab_apps_path ~ '/unbound/unbound.conf']
+      - homelab_unbound_service.volumes | selectattr('target', 'equalto', '/opt/unbound/etc/unbound/unbound.conf') | map(attribute='read_only') | list == [true]
+  vars:
+    homelab_unbound_service: "{{ (homelab_unbound_compose.stdout | from_json).services.unbound }}"
+
+- name: Inspect the installed Unbound image
+  community.docker.docker_image_info:
+    name: "{{ homelab_unbound_image }}"
+  register: homelab_unbound_image_info
+
+- name: Download Unbound only if its image is missing
+  community.docker.docker_image:
+    name: "{{ homelab_unbound_image }}"
+    source: pull
+    force_source: false
+
+- name: Validate Unbound syntax in a temporary container before deployment
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/unbound", run, --rm, --no-deps, --pull, never, --entrypoint, unbound-checkconf, unbound, /opt/unbound/etc/unbound/unbound.conf]
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode or homelab_unbound_image_info.images | length > 0
+
+- name: Deploy Unbound from its existing Compose definition
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/unbound"
+    project_name: unbound
+    files: [docker-compose.yml]
+    state: present
+    pull: missing
+    build: never
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+
+- name: Verify recursive DNS answers over UDP and TCP
+  ansible.builtin.command:
+    argv: [dig, '@127.0.0.1', -p, '5335', "{{ homelab_unbound_test_name }}", A, '+time=5', '+tries=1', '+noall', '+comments', '+answer', "{{ item }}"]
+  loop: ['+notcp', '+tcp']
+  changed_when: false
+  register: homelab_unbound_dns
+  until: >-
+    homelab_unbound_dns.rc == 0 and
+    'status: NOERROR' in homelab_unbound_dns.stdout and
+    homelab_unbound_dns.stdout is search('\sIN\s+A\s+')
+  retries: 6
+  delay: 5
+  when: not ansible_check_mode

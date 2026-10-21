@@ -87,6 +87,16 @@ To change thresholds, endpoints, or expected containers, edit `monitoring/config
 
 ## Installation and rebuild
 
+Ansible now manages all three jobs (monitoring, the Matrix status listener, and database backups):
+
+```bash
+cd ~/Documents/homelab/ansible
+ansible-playbook scheduled-jobs.yml --check --diff
+ansible-playbook scheduled-jobs.yml
+```
+
+Restore the existing notification credentials and Caddy CA, prepare the host, and start the application containers first. The role installs versioned scripts/configuration, validates and installs all six units, preserves credentials and queued state, and enables their timers. See [Ansible prerequisites and behavior](../ansible/README.md#monitoring-and-database-backup-jobs). The manual unit installation commands below remain useful for troubleshooting; rerunning Ansible reconciles installed units with the tracked sources.
+
 The initial installation is active as of 2026-10-11. Units are copied into `/etc/systemd/system`; the source copies in this directory are tracked. Reinstall after changing units:
 
 ```bash
@@ -124,3 +134,11 @@ sudo python3 -B scripts/setup_matrix_alerts.py \
 This uses the existing bot token, checks its account, creates an invite-only room without encryption, and saves its credentials privately. Restore `data/monitoring/matrix.json` from backup to retain the existing room instead.
 
 The database follow-up adds a seventeenth production check. The hourly dump script has two additional tests for keeping the last good dump on failure and publishing a private complete file: `python3 -B -m unittest discover -s scripts -p test_backup_matrix_db.py -v`.
+
+## Weekly recovery verification
+
+`homelab-recovery.timer` runs the isolated file/database/Synapse recovery workflow weekly. The new `backup:recovery` check raises the total to 18: it reports failed verification, a run stuck beyond 35 minutes, and a last successful run older than eight days. Routine success stays quiet; failures and recovery use the existing alert transitions and reminder policy. Status and latest detailed log are root-only under `/var/lib/homelab-recovery`. See [operations](../OPERATIONS.md#scheduled-recovery-verification).
+
+Outside monitoring was deferred by the user on 2026-10-19. No external monitor is active; prepared settings are retained for a future revisit: [setup](EXTERNAL_MONITORING.md).
+
+On 2026-10-21, weekly recovery was extended to test recovered Vaultwarden with a disposable login/encrypted item and recovered Matrix with disposable logins, local messages and authenticated media round-trips. These writes run only inside loopback-only restored copies; original user contents are not decrypted. The installed service passed the expanded workflow. See [the validation report](../reports/2026-10-21-action-batch.md).

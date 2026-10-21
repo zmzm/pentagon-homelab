@@ -1,0 +1,11 @@
+---
+- name: Verify homelab before deploying Portainer
+  ansible.builtin.import_playbook: site.yml
+
+- name: Deploy and verify Portainer
+  hosts: homelab
+  gather_facts: false
+  become: true
+
+  roles:
+    - role: portainer

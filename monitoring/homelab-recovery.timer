@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly isolated backup recovery verification
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00 Europe/Warsaw
+RandomizedDelaySec=30min
+Persistent=true
+Unit=homelab-recovery.service
+
+[Install]
+WantedBy=timers.target

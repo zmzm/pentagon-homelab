@@ -1,0 +1,10 @@
+---
+- name: Verify homelab before deploying Cloudflare Tunnel
+  ansible.builtin.import_playbook: site.yml
+
+- name: Deploy and verify Cloudflare Tunnel
+  hosts: homelab
+  gather_facts: false
+  become: true
+  roles:
+    - role: cloudflared

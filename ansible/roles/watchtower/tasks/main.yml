@@ -1,0 +1,62 @@
+---
+- name: Inspect Watchtower Compose definition
+  ansible.builtin.stat:
+    path: "{{ homelab_apps_path }}/watchtower/docker-compose.yml"
+    follow: false
+  register: homelab_watchtower_compose
+
+- name: Require the versioned Watchtower Compose definition
+  ansible.builtin.assert:
+    that:
+      - homelab_watchtower_compose.stat.isreg | default(false)
+      - not (homelab_watchtower_compose.stat.islnk | default(false))
+    fail_msg: Restore apps/watchtower/docker-compose.yml from the repository first.
+
+- name: Inspect the Docker socket used by Watchtower
+  ansible.builtin.stat:
+    path: /var/run/docker.sock
+    follow: false
+  register: homelab_watchtower_socket
+
+- name: Require the existing Docker socket
+  ansible.builtin.assert:
+    that:
+      - homelab_watchtower_socket.stat.issock | default(false)
+      - not (homelab_watchtower_socket.stat.islnk | default(false))
+    fail_msg: Prepare the host and start Docker before deploying Watchtower.
+
+- name: Inspect the shared proxy network
+  community.docker.docker_network_info:
+    name: proxy
+  register: homelab_watchtower_network
+
+- name: Require the existing proxy network
+  ansible.builtin.assert:
+    that:
+      - homelab_watchtower_network.exists
+    fail_msg: Run prepare.yml before deploying Watchtower.
+
+- name: Validate Watchtower Compose definition
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/watchtower", config, --quiet]
+  changed_when: false
+  check_mode: false
+
+- name: Deploy Watchtower from its existing Compose definition
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/watchtower"
+    project_name: watchtower
+    files: [docker-compose.yml]
+    state: present
+    pull: missing
+    build: never
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+
+- name: Verify Watchtower using its built-in health check
+  ansible.builtin.command:
+    argv: [docker, exec, watchtower, /watchtower, --health-check]
+  changed_when: false
+  when: not ansible_check_mode

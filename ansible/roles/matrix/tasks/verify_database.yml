@@ -1,0 +1,39 @@
+---
+- name: Verify restored Synapse database with its real network credentials
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - "{{ homelab_matrix_network_name }}"
+      - --user
+      - "{{ homelab_matrix_synapse_uid }}:{{ homelab_matrix_synapse_uid }}"
+      - --mount
+      - "type=bind,src={{ homelab_data_path }}/matrix/synapse,dst=/data,readonly"
+      - --entrypoint
+      - python
+      - "{{ homelab_matrix_synapse_image }}"
+      - -B
+      - -c
+      - |
+        import psycopg2, yaml
+        with open('/data/homeserver.yaml') as source:
+            config = yaml.safe_load(source)
+        args = config['database']['args']
+        connection_args = {name: args[name] for name in ('host', 'user', 'database', 'password')}
+        connection_args['port'] = args.get('port', 5432)
+        connection_args['connect_timeout'] = 10
+        with psycopg2.connect(**connection_args) as connection:
+            connection.set_session(readonly=True, autocommit=True)
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_encoding_to_char(encoding), datcollate, datctype FROM pg_database WHERE datname=current_database()")
+                assert cursor.fetchone() == ('UTF8', 'C', 'C'), 'Review database locale before deployment'
+                cursor.execute("SELECT to_regclass('public.users') IS NOT NULL AND to_regclass('public.rooms') IS NOT NULL AND to_regclass('public.schema_version') IS NOT NULL")
+                assert cursor.fetchone()[0], 'Restore the Synapse schema before deployment'
+                cursor.execute('SELECT max(version) FROM schema_version')
+                assert cursor.fetchone()[0] > 0, 'Synapse schema version is missing'
+        print('PASS: authenticated database connection, locale and restored Synapse schema.')
+  changed_when: false
+  check_mode: false
+  no_log: true

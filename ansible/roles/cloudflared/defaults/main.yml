@@ -1,0 +1,9 @@
+---
+homelab_cloudflared_image: cloudflare/cloudflared:latest
+homelab_cloudflared_uid: 65532
+homelab_cloudflared_gid: 65532
+homelab_cloudflared_metrics_address: 127.0.0.1:20241
+homelab_cloudflared_matrix_url: https://matrix.pentagonlab.org
+homelab_cloudflared_matrix_origin: http://127.0.0.1:8008
+# This additional ingress belongs to a separate application project.
+homelab_cloudflared_extra_public_urls: ['https://vladjik.dev/']

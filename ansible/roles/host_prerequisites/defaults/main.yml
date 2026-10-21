@@ -1,0 +1,16 @@
+---
+# Empty for real hosts. Repository-only fixtures use a private temporary root.
+homelab_docker_apt_root: ''
+homelab_docker_repository_os: "{{ {'Debian': 'debian', 'Ubuntu': 'ubuntu'}.get(ansible_facts.distribution, '') }}"
+homelab_docker_repository_suite: "{{ ansible_facts.distribution_release }}"
+homelab_docker_repository_arch: "{{ {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(ansible_facts.architecture, '') }}"
+homelab_docker_key_fingerprint: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+homelab_docker_conflicting_packages:
+  - docker.io
+  - docker-compose
+  - docker-compose-v2
+  - docker-doc
+  - docker-buildx
+  - podman-docker
+  - containerd
+  - runc

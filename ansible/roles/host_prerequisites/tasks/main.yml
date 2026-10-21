@@ -3,19 +3,76 @@
   ansible.builtin.assert:
     that:
       - ansible_facts.os_family == 'Debian'
-    fail_msg: This baseline currently supports Debian-family hosts only.
+      - homelab_docker_repository_suite in {'debian':['bookworm','trixie'], 'ubuntu':['jammy','noble','resolute']}.get(homelab_docker_repository_os, [])
+      - homelab_docker_repository_arch in ['amd64', 'arm64']
+      - homelab_docker_apt_root == ''
+    fail_msg: Automatic host setup supports Debian 12/13 and Ubuntu 22.04/24.04/26.04 on ARM64/AMD64.
+
+- name: Inspect installed packages before configuring Docker
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Refuse conflicting distribution Docker and runtime packages
+  ansible.builtin.assert:
+    that:
+      - homelab_docker_conflicting_packages | intersect(ansible_facts.packages.keys() | list) | length == 0
+    fail_msg: Conflicting Docker/container runtime packages exist; review their migration before running preparation. No packages are removed automatically.
+
+- name: Check for an unmanaged Docker binary
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -B, -c, 'import shutil; print(int(shutil.which("docker") is not None))']
+  register: homelab_docker_binary
+  changed_when: false
+  check_mode: false
+
+- name: Require an existing Docker binary to belong to the expected installed package
+  ansible.builtin.assert:
+    that:
+      - homelab_docker_binary.stdout | trim == '0' or 'docker-ce-cli' in ansible_facts.packages
+    fail_msg: An unmanaged Docker binary exists; review it before installing official packages.
+
+- name: Install missing HTTPS and signing-key inspection prerequisites
+  ansible.builtin.apt:
+    name: [ca-certificates, gpg]
+    state: present
+    update_cache: "{{ 'ca-certificates' not in ansible_facts.packages or 'gpg' not in ansible_facts.packages }}"
+    fail_on_autoremove: true
+  when: not ansible_check_mode or ('ca-certificates' in ansible_facts.packages and 'gpg' in ansible_facts.packages)
+
+- name: Configure the official Docker repository while preserving a valid existing source
+  ansible.builtin.include_tasks: docker_repository.yml
+
+- name: Refresh apt metadata for a new repository or missing prerequisites
+  ansible.builtin.apt:
+    update_cache: true
+  when:
+    - not ansible_check_mode
+    - (homelab_docker_source_created.changed | default(false)) or (homelab_prerequisite_packages | difference(ansible_facts.packages.keys() | list) | length > 0)
+
+- name: Start a package specification list that preserves installed versions
+  ansible.builtin.set_fact:
+    homelab_prerequisite_specs: []
+
+- name: Pin existing prerequisite package versions for this installation
+  ansible.builtin.set_fact:
+    homelab_prerequisite_specs: "{{ homelab_prerequisite_specs + [item ~ '=' ~ ansible_facts.packages[item][0].version if item in ansible_facts.packages else item] }}"
+  loop: "{{ homelab_prerequisite_packages }}"
 
 - name: Ensure prerequisite packages are installed without upgrading installed versions
   ansible.builtin.apt:
-    name: "{{ homelab_prerequisite_packages }}"
+    name: "{{ homelab_prerequisite_specs }}"
     state: present
     update_cache: false
+    allow_downgrade: false
+    fail_on_autoremove: true
+  when: not ansible_check_mode or homelab_docker_repository_plan.existing
 
 - name: Ensure Docker starts at boot and is running
   ansible.builtin.systemd_service:
     name: docker
     enabled: true
     state: started
+  when: not ansible_check_mode or 'docker-ce' in ansible_facts.packages
 
 - name: Verify required tools
   ansible.builtin.command:
@@ -30,3 +87,4 @@
     - [restic, version]
   changed_when: false
   check_mode: false
+  when: not ansible_check_mode or 'docker-ce' in ansible_facts.packages

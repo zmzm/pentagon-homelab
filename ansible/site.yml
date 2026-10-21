@@ -1,4 +1,9 @@
 ---
+- name: Verify explicitly selected replacement targets before regular preflight
+  ansible.builtin.import_playbook: remote-preflight.yml
+  when: "'homelab_replacement' in group_names"
+  tags: [always]
+
 - name: Pentagon homelab preflight
   hosts: homelab
   gather_facts: true

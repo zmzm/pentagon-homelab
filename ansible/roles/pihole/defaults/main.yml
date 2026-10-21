@@ -1,0 +1,13 @@
+---
+homelab_pihole_image: pihole/pihole:latest
+homelab_pihole_url: https://pihole.home.arpa
+homelab_pihole_ca_path: "{{ homelab_homepage_ca_path }}"
+homelab_pihole_upstreams: ['127.0.0.1#5335']
+homelab_pihole_test_name: example.com
+homelab_pihole_local_names:
+  - pihole.home.arpa
+  - docker.home.arpa
+  - vault.home.arpa
+  - dashboard.home.arpa
+  - backrest.home.arpa
+  - interview-assistant.home.arpa

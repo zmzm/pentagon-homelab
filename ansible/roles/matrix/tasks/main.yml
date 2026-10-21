@@ -1,0 +1,324 @@
+---
+- name: Inspect restored Matrix directories
+  ansible.builtin.stat:
+    path: "{{ homelab_data_path }}/matrix/{{ item }}"
+    follow: false
+  loop: [postgres, postgres/base, synapse]
+  register: homelab_matrix_directories
+
+- name: Require restored PostgreSQL and Synapse directories
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isdir | default(false)
+      - not (item.stat.islnk | default(false))
+    fail_msg: Restore the PostgreSQL cluster and complete Synapse runtime data before deployment.
+  loop: "{{ homelab_matrix_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect required Matrix recovery files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ homelab_apps_path }}/matrix/docker-compose.yml"
+    - "{{ homelab_apps_path }}/matrix/.env"
+    - "{{ homelab_data_path }}/matrix/postgres/PG_VERSION"
+    - "{{ homelab_data_path }}/matrix/postgres/global/pg_control"
+    - "{{ homelab_data_path }}/matrix/synapse/homeserver.yaml"
+  register: homelab_matrix_files
+
+- name: Require nonempty existing Matrix configuration and cluster files
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.size | default(0) > 0
+    fail_msg: "Restore the required Matrix recovery file: {{ item.item }}"
+  loop: "{{ homelab_matrix_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not (item.item == homelab_apps_path ~ '/matrix/.env' and vault_matrix_postgres_password is defined and not item.stat.exists)
+
+- name: Validate supplied Matrix database password
+  ansible.builtin.assert:
+    that:
+      - vault_matrix_postgres_password is string
+      - vault_matrix_postgres_password == vault_matrix_postgres_password | trim
+      - vault_matrix_postgres_password is match('^[A-Za-z0-9_.~+/=-]+$')
+      - vault_matrix_postgres_password != 'REPLACE_WITH_EXISTING_PASSWORD'
+  when: vault_matrix_postgres_password is defined
+  no_log: true
+
+- name: Validate Matrix Compose without exposing database credentials
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/matrix", config, --format, json]
+  register: homelab_matrix_compose
+  changed_when: false
+  check_mode: false
+  no_log: true
+  environment: "{{ {'MATRIX_POSTGRES_PASSWORD': vault_matrix_postgres_password} if vault_matrix_postgres_password is defined else {} }}"
+
+- name: Require intended images, network, dependency and loopback-only HTTP binding
+  ansible.builtin.assert:
+    that:
+      - homelab_matrix_config.services.postgres.image == homelab_matrix_postgres_image
+      - homelab_matrix_config.services.synapse.image == homelab_matrix_synapse_image
+      - homelab_matrix_config.networks.matrix.name == homelab_matrix_network_name
+      - homelab_matrix_config.services.postgres.networks.keys() | list == ['matrix']
+      - homelab_matrix_config.services.synapse.networks.keys() | list == ['matrix']
+      - homelab_matrix_config.services.postgres.ports | default([]) | length == 0
+      - homelab_matrix_config.services.synapse.ports | length == 1
+      - homelab_matrix_config.services.synapse.ports[0].host_ip == '127.0.0.1'
+      - homelab_matrix_config.services.synapse.ports[0].published | string == '8008'
+      - homelab_matrix_config.services.synapse.ports[0].target == 8008
+      - homelab_matrix_config.services.synapse.depends_on.postgres.condition == 'service_healthy'
+      - homelab_matrix_config.services.synapse.environment.SYNAPSE_CONFIG_PATH == '/data/homeserver.yaml'
+  vars:
+    homelab_matrix_config: "{{ homelab_matrix_compose.stdout | from_json }}"
+
+- name: Require Compose to mount the restored PostgreSQL and Synapse data
+  ansible.builtin.assert:
+    that:
+      - homelab_matrix_volumes | length == 1
+      - homelab_matrix_volumes[0].type == 'bind'
+      - homelab_matrix_volumes[0].source == item.source
+      - homelab_matrix_volumes[0].target == item.target
+      - not (homelab_matrix_volumes[0].read_only | default(false))
+  vars:
+    homelab_matrix_volumes: "{{ (homelab_matrix_compose.stdout | from_json).services[item.service].volumes }}"
+  loop:
+    - {service: postgres, source: "{{ homelab_data_path }}/matrix/postgres", target: /var/lib/postgresql/data}
+    - {service: synapse, source: "{{ homelab_data_path }}/matrix/synapse", target: /data}
+  loop_control:
+    label: "{{ item.service }}"
+
+- name: Validate homeserver identity, secret consistency and recovery paths privately
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        import json, pathlib, sys, yaml
+        folder = pathlib.Path(sys.argv[1]).resolve()
+        with (folder / 'synapse/homeserver.yaml').open() as source:
+            config = yaml.safe_load(source)
+        compose = json.load(sys.stdin)
+        assert (folder / 'postgres/PG_VERSION').read_text().strip() == sys.argv[2], 'PostgreSQL major-version mismatch'
+        assert config['server_name'] == sys.argv[3], 'Do not change restored homeserver identity'
+        assert config['public_baseurl'].rstrip('/') == sys.argv[4].rstrip('/')
+        assert config['database']['name'] == 'psycopg2'
+        args = config['database']['args']
+        environment = compose['services']['postgres']['environment']
+        assert args['host'] == 'postgres' and args.get('port', 5432) == 5432
+        assert args['user'] == environment['POSTGRES_USER'] == 'synapse'
+        assert args['database'] == environment['POSTGRES_DB'] == 'synapse'
+        assert args.get('password') and args['password'] == environment['POSTGRES_PASSWORD'], 'Restore matching database secrets'
+        assert any(item.get('port') == 8008 and item.get('type') == 'http' and not item.get('tls', False) and item.get('x_forwarded') for item in config.get('listeners', []))
+        root = folder / 'synapse'
+        paths = {}
+        for key in ['signing_key_path', 'log_config', 'media_store_path']:
+            configured = pathlib.PurePosixPath(config[key])
+            relative = configured.relative_to('/data')
+            assert '..' not in relative.parts
+            path = root.joinpath(*relative.parts)
+            assert not path.is_symlink() and path.resolve().is_relative_to(root)
+            paths[key] = str(path)
+        if sys.argv[6] == 'render':
+            env = pathlib.Path(sys.argv[5])
+            if env.exists():
+                lines = [line.strip() for line in env.read_text().splitlines()
+                         if line.strip() and not line.lstrip().startswith('#')]
+                assert len(lines) == 1 and lines[0].startswith('MATRIX_POSTGRES_PASSWORD='), 'Refuse to discard unrelated environment settings'
+        print(json.dumps(paths))
+      - "{{ homelab_data_path }}/matrix"
+      - "{{ homelab_matrix_postgres_major }}"
+      - "{{ homelab_matrix_server_name }}"
+      - "{{ homelab_matrix_public_url }}"
+      - "{{ homelab_apps_path }}/matrix/.env"
+      - "{{ 'render' if vault_matrix_postgres_password is defined else 'preserve' }}"
+    stdin: "{{ homelab_matrix_compose.stdout }}"
+  register: homelab_matrix_recovery
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Inspect the configured signing key, log configuration and media store
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ (homelab_matrix_recovery.stdout | from_json).signing_key_path }}"
+    - "{{ (homelab_matrix_recovery.stdout | from_json).log_config }}"
+    - "{{ (homelab_matrix_recovery.stdout | from_json).media_store_path }}"
+  register: homelab_matrix_recovery_paths
+
+- name: Require existing signing and log configuration owned by the Synapse service user
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.size | default(0) > 0
+      - item.stat.uid == homelab_matrix_synapse_uid | int
+  loop: "{{ homelab_matrix_recovery_paths.results[:2] }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Require the restored media store and expected Synapse ownership
+  ansible.builtin.assert:
+    that:
+      - homelab_matrix_recovery_paths.results[2].stat.isdir | default(false)
+      - not (homelab_matrix_recovery_paths.results[2].stat.islnk | default(false))
+      - homelab_matrix_directories.results[2].stat.uid == homelab_matrix_synapse_uid | int
+      - homelab_matrix_files.results[4].stat.uid == homelab_matrix_synapse_uid | int
+    fail_msg: Restore the media store and review Synapse UID ownership before restricting secret permissions.
+
+- name: Inspect Matrix images for preview validation
+  community.docker.docker_image_info:
+    name: "{{ homelab_matrix_synapse_image }}"
+  register: homelab_matrix_synapse_image_info
+
+- name: Obtain Matrix images only if missing
+  community.docker.docker_image:
+    name: "{{ item }}"
+    source: pull
+    force_source: false
+  loop: ["{{ homelab_matrix_postgres_image }}", "{{ homelab_matrix_synapse_image }}"]
+
+- name: Validate Synapse natively with read-only data and no network
+  ansible.builtin.command:
+    argv: [docker, run, --rm, --network, none, --user, "{{ homelab_matrix_synapse_uid }}:{{ homelab_matrix_synapse_uid }}", --mount, "type=bind,src={{ homelab_data_path }}/matrix/synapse,dst=/data,readonly", --entrypoint, python, "{{ homelab_matrix_synapse_image }}", -m, synapse.config, read, server.server_name, --config-path, /data/homeserver.yaml]
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: not ansible_check_mode or homelab_matrix_synapse_image_info.images | length > 0
+
+- name: Inspect the current Matrix database container
+  community.docker.docker_container_info:
+    name: matrix-postgres
+  register: homelab_matrix_existing_postgres
+  no_log: true
+
+- name: Check an already running database before changing its deployment
+  ansible.builtin.include_tasks: verify_database.yml
+  when:
+    - homelab_matrix_existing_postgres.exists
+    - homelab_matrix_existing_postgres.container.State.Running | default(false)
+    - not ansible_check_mode or homelab_matrix_synapse_image_info.images | length > 0
+
+- name: Render the existing Matrix database password from Vault after recovery checks
+  ansible.builtin.template:
+    src: matrix.env.j2
+    dest: "{{ homelab_apps_path }}/matrix/.env"
+    owner: "{{ homelab_owner }}"
+    group: "{{ homelab_group }}"
+    mode: '0600'
+  when: vault_matrix_postgres_password is defined
+  no_log: true
+  diff: false
+
+- name: Restrict the saved Matrix environment file
+  ansible.builtin.file:
+    path: "{{ homelab_apps_path }}/matrix/.env"
+    mode: '0600'
+  when: vault_matrix_postgres_password is not defined
+
+- name: Restrict the Synapse runtime directory to its existing service owner
+  ansible.builtin.file:
+    path: "{{ homelab_data_path }}/matrix/synapse"
+    state: directory
+    mode: '0700'
+
+- name: Restrict Synapse configuration, signing key and logging configuration
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: '0600'
+  loop:
+    - "{{ homelab_data_path }}/matrix/synapse/homeserver.yaml"
+    - "{{ (homelab_matrix_recovery.stdout | from_json).signing_key_path }}"
+    - "{{ (homelab_matrix_recovery.stdout | from_json).log_config }}"
+
+- name: Deploy and wait for the restored PostgreSQL service only
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/matrix"
+    project_name: matrix
+    files: [docker-compose.yml]
+    services: [postgres]
+    dependencies: false
+    state: present
+    pull: missing
+    build: never
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+  no_log: true
+  environment: "{{ {'MATRIX_POSTGRES_PASSWORD': vault_matrix_postgres_password} if vault_matrix_postgres_password is defined else {} }}"
+
+- name: Verify restored database authentication and schema before deploying Synapse
+  ansible.builtin.include_tasks: verify_database.yml
+  when: not ansible_check_mode
+
+- name: Deploy Synapse after verifying its restored database
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/matrix"
+    project_name: matrix
+    files: [docker-compose.yml]
+    services: [synapse]
+    dependencies: false
+    state: present
+    pull: missing
+    build: never
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+  no_log: true
+  environment: "{{ {'MATRIX_POSTGRES_PASSWORD': vault_matrix_postgres_password} if vault_matrix_postgres_password is defined else {} }}"
+
+- name: Verify local Synapse health
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8008/health
+    use_proxy: false
+    status_code: 200
+    return_content: true
+    timeout: 10
+  register: homelab_matrix_health
+  until: homelab_matrix_health.status | default(0) == 200 and homelab_matrix_health.content | default('') | trim == 'OK'
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode
+
+- name: Verify local Matrix client API
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8008/_matrix/client/versions
+    use_proxy: false
+    status_code: 200
+    timeout: 10
+  register: homelab_matrix_versions
+  until: homelab_matrix_versions.status | default(0) == 200 and homelab_matrix_versions.json.versions | default([]) | length > 0
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode
+
+- name: Verify public Matrix API through the existing Cloudflare Tunnel with trusted TLS
+  ansible.builtin.uri:
+    url: "{{ homelab_matrix_public_url }}/_matrix/client/versions"
+    validate_certs: true
+    follow_redirects: none
+    use_proxy: false
+    status_code: 200
+    timeout: 15
+  register: homelab_matrix_public
+  until: homelab_matrix_public.status | default(0) == 200 and homelab_matrix_public.json.versions | default([]) | length > 0
+  retries: 6
+  delay: 5
+  when:
+    - not ansible_check_mode
+    - homelab_matrix_check_public | bool

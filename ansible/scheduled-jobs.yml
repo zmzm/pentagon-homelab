@@ -1,0 +1,11 @@
+---
+- name: Verify homelab before installing scheduled jobs
+  ansible.builtin.import_playbook: site.yml
+
+- name: Install monitoring, database backup and isolated recovery jobs
+  hosts: homelab
+  gather_facts: false
+  become: true
+
+  roles:
+    - role: scheduled_jobs

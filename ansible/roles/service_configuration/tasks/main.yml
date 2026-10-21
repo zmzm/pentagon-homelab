@@ -1,0 +1,175 @@
+---
+- name: Require a supported configuration target
+  ansible.builtin.assert:
+    that:
+      - homelab_configuration_service in ['matrix', 'cloudflared']
+
+- name: Select private configuration paths and native validation details
+  ansible.builtin.set_fact:
+    homelab_configuration_path: "{{ homelab_data_path ~ ('/matrix/synapse/homeserver.yaml' if homelab_configuration_service == 'matrix' else '/cloudflared/config.yml') }}"
+    homelab_configuration_container: "{{ homelab_configuration_container_name | default('matrix-synapse' if homelab_configuration_service == 'matrix' else 'cloudflared') }}"
+    homelab_configuration_uid: "{{ '991' if homelab_configuration_service == 'matrix' else '65532' }}"
+    homelab_configuration_gid: "{{ '991' if homelab_configuration_service == 'matrix' else '65532' }}"
+
+- name: Inspect the configuration folder
+  ansible.builtin.stat:
+    path: "{{ homelab_configuration_path | dirname }}"
+    follow: false
+  register: homelab_configuration_folder
+
+- name: Require restored service data before rendering configuration
+  ansible.builtin.assert:
+    that:
+      - homelab_configuration_folder.stat.isdir | default(false)
+      - not (homelab_configuration_folder.stat.islnk | default(false))
+
+- name: Inspect the existing service and exact installed image
+  community.docker.docker_container_info:
+    name: "{{ homelab_configuration_container }}"
+  register: homelab_configuration_running
+  no_log: true
+
+- name: Require the selected container to use the configuration directory being managed
+  ansible.builtin.assert:
+    that:
+      - mounts | length == 1
+      - mounts[0].Type == 'bind'
+      - mounts[0].Source == homelab_configuration_path | dirname
+    fail_msg: Container and configuration paths differ; refuse to restart an unrelated service.
+  vars:
+    mounts: "{{ homelab_configuration_running.container.Mounts | selectattr('Destination', 'equalto', '/data' if homelab_configuration_service == 'matrix' else '/etc/cloudflared') | list }}"
+  when: homelab_configuration_running.exists
+
+- name: Select the installed image or expected recovery image
+  ansible.builtin.set_fact:
+    homelab_configuration_image: "{{ homelab_configuration_running.container.Image if homelab_configuration_running.exists else ('matrixdotorg/synapse:latest' if homelab_configuration_service == 'matrix' else 'cloudflare/cloudflared:latest') }}"
+
+- name: Obtain the recovery image only when no existing container supplies it
+  community.docker.docker_image:
+    name: "{{ homelab_configuration_image }}"
+    source: pull
+    force_source: false
+  when: not homelab_configuration_running.exists
+
+- name: Inspect the native validation image
+  community.docker.docker_image_info:
+    name: "{{ homelab_configuration_image }}"
+  register: homelab_configuration_image_info
+
+- name: Require an installed image for native candidate validation
+  ansible.builtin.assert:
+    that: [homelab_configuration_image_info.images | length == 1]
+    fail_msg: Install the service image before previewing configuration recovery.
+
+- name: Build candidate while preserving restored identities and secrets
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -B, -c, "{{ lookup('ansible.builtin.file', role_path ~ '/../../../scripts/service_configuration.py') }}"]
+    stdin: "{{ {'service': homelab_configuration_service, 'path': homelab_configuration_path, 'settings': homelab_matrix_homeserver if homelab_configuration_service == 'matrix' else homelab_cloudflared_configuration, 'secrets': vault_matrix_synapse_secrets | default({}), 'password': vault_matrix_postgres_password | default(none)} | to_json }}"
+  register: homelab_configuration_candidate
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Stage and validate candidate before any live write
+  block:
+    - name: Create private candidate directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: homelab-config-
+      register: homelab_configuration_stage
+      check_mode: false
+      changed_when: false
+
+    - name: Stage private candidate as the service user
+      ansible.builtin.copy:
+        content: "{{ (homelab_configuration_candidate.stdout | from_json).yaml }}"
+        dest: "{{ homelab_configuration_stage.path }}/candidate.yml"
+        owner: "{{ homelab_configuration_uid }}"
+        group: "{{ homelab_configuration_gid }}"
+        mode: '0600'
+      check_mode: false
+      changed_when: false
+      no_log: true
+      diff: false
+
+    - name: Validate candidate with the installed image and read-only restored data
+      ansible.builtin.command:
+        argv: "{{ ['docker', 'run', '--rm', '--network', 'none', '--label', 'com.centurylinklabs.watchtower.enable=false', '--user', homelab_configuration_uid ~ ':' ~ homelab_configuration_gid, '--mount', 'type=bind,src=' ~ (homelab_configuration_path | dirname) ~ ',dst=' ~ ('/data' if homelab_configuration_service == 'matrix' else '/etc/cloudflared') ~ ',readonly', '--mount', 'type=bind,src=' ~ homelab_configuration_stage.path ~ '/candidate.yml,dst=/candidate.yml,readonly', '--entrypoint'] + (['python', homelab_configuration_image, '-m', 'synapse.config', 'read', 'server.server_name', '--config-path', '/candidate.yml'] if homelab_configuration_service == 'matrix' else ['cloudflared', homelab_configuration_image, 'tunnel', '--config', '/candidate.yml', 'ingress', 'validate']) }}"
+      check_mode: false
+      changed_when: false
+      no_log: true
+
+    - name: Verify Matrix ingress selection in the candidate
+      ansible.builtin.command:
+        argv: [docker, run, --rm, --network, none, --user, '65532:65532', --mount, "type=bind,src={{ homelab_configuration_path | dirname }},dst=/etc/cloudflared,readonly", --mount, "type=bind,src={{ homelab_configuration_stage.path }}/candidate.yml,dst=/candidate.yml,readonly", --entrypoint, cloudflared, "{{ homelab_configuration_image }}", tunnel, --config, /candidate.yml, ingress, rule, 'https://matrix.pentagonlab.org/_matrix/client/versions']
+      register: homelab_configuration_ingress
+      failed_when: "homelab_configuration_ingress.rc != 0 or 'service: http://127.0.0.1:8008' not in homelab_configuration_ingress.stdout"
+      when: homelab_configuration_service == 'cloudflared'
+      check_mode: false
+      changed_when: false
+      no_log: true
+
+    - name: Save previous bytes for rollback
+      ansible.builtin.slurp:
+        src: "{{ homelab_configuration_path }}"
+      register: homelab_configuration_previous
+      failed_when: false
+      no_log: true
+
+    - name: Apply changed validated configuration and verify restart
+      when: (homelab_configuration_candidate.stdout | from_json).changed
+      block:
+        - name: Install the validated candidate atomically
+          ansible.builtin.copy:
+            content: "{{ (homelab_configuration_candidate.stdout | from_json).yaml }}"
+            dest: "{{ homelab_configuration_path }}"
+            owner: "{{ '991' if homelab_configuration_service == 'matrix' else homelab_configuration_folder.stat.uid }}"
+            group: "{{ homelab_configuration_gid }}"
+            mode: "{{ '0600' if homelab_configuration_service == 'matrix' else '0640' }}"
+          no_log: true
+          diff: false
+
+        - name: Restart the running service to load changed configuration
+          ansible.builtin.command:
+            argv: [docker, restart, "{{ homelab_configuration_container }}"]
+          when: not ansible_check_mode and homelab_configuration_running.exists and homelab_configuration_running.container.State.Running
+
+        - name: Verify running service readiness after applying configuration
+          ansible.builtin.uri:
+            url: "{{ 'http://127.0.0.1:8008/health' if homelab_configuration_service == 'matrix' else 'http://127.0.0.1:20241/ready' }}"
+            use_proxy: false
+            status_code: 200
+            timeout: 5
+          register: homelab_configuration_ready
+          until: homelab_configuration_ready.status | default(0) == 200
+          retries: 30
+          delay: 2
+          when: not ansible_check_mode and homelab_configuration_running.exists and homelab_configuration_running.container.State.Running
+      rescue:
+        - name: Restore previous configuration when an active configuration update fails
+          ansible.builtin.copy:
+            content: "{{ homelab_configuration_previous.content | b64decode }}"
+            dest: "{{ homelab_configuration_path }}"
+            owner: "{{ '991' if homelab_configuration_service == 'matrix' else homelab_configuration_folder.stat.uid }}"
+            group: "{{ homelab_configuration_gid }}"
+            mode: "{{ '0600' if homelab_configuration_service == 'matrix' else '0640' }}"
+          when: homelab_configuration_previous.content is defined
+          no_log: true
+          diff: false
+
+        - name: Restart service with its previous configuration
+          ansible.builtin.command:
+            argv: [docker, restart, "{{ homelab_configuration_container }}"]
+          when: homelab_configuration_previous.content is defined and homelab_configuration_running.exists and homelab_configuration_running.container.State.Running
+
+        - name: Report rejected configuration deployment
+          ansible.builtin.fail:
+            msg: Configuration activation failed; the previous configuration was restored when available.
+  always:
+    - name: Remove private candidate files
+      ansible.builtin.file:
+        path: "{{ homelab_configuration_stage.path }}"
+        state: absent
+      when: homelab_configuration_stage.path is defined
+      check_mode: false
+      changed_when: false

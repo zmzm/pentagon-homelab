@@ -1,0 +1,10 @@
+---
+- ansible.builtin.import_playbook: site.yml
+- name: Manage Synapse configuration without rotating identity or secrets
+  hosts: homelab
+  gather_facts: false
+  become: true
+  vars:
+    homelab_configuration_service: matrix
+  roles: [service_configuration]
+- ansible.builtin.import_playbook: matrix.yml

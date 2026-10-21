@@ -1,0 +1,200 @@
+---
+- name: Inspect Backrest recovery files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ homelab_apps_path }}/backrest/docker-compose.yml"
+    - "{{ homelab_data_path }}/backrest/config/config.json"
+    - "{{ homelab_data_path }}/backrest/data/kvdb.sqlite"
+    - "{{ homelab_data_path }}/backrest/data/oplog.sqlite"
+    - "{{ homelab_backups_path }}/restic/config"
+    - "{{ homelab_backrest_ca_path }}"
+  register: homelab_backrest_files
+
+- name: Require restored Backrest configuration, history, repository and local CA
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.size | default(0) > 0
+    fail_msg: "Restore the required nonempty recovery file before deploying Backrest: {{ item.item }}"
+  loop: "{{ homelab_backrest_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate restored local repository configuration without exposing credentials
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        import json, os, pathlib, subprocess, sys
+        with open(sys.argv[1]) as source:
+            config = json.load(source)
+        repos = config.get('repos', [])
+        assert len(repos) == 1 and repos[0]['uri'] == '/repos/restic'
+        assert isinstance(repos[0].get('password'), str) and repos[0]['password']
+        assert any(plan.get('id') == sys.argv[3] for plan in config.get('plans', []))
+        environment = dict(os.environ, RESTIC_PASSWORD=repos[0]['password'])
+        environment.pop('RESTIC_PASSWORD_FILE', None)
+        environment.pop('RESTIC_PASSWORD_COMMAND', None)
+        result = subprocess.run(
+            ['restic', '--repo', str(pathlib.Path(sys.argv[2]).parent), '--no-cache', '--no-lock', 'cat', 'config'],
+            env=environment, capture_output=True, text=True, check=True, timeout=30)
+        repository = json.loads(result.stdout)
+        assert repository.get('version') in (1, 2) and repository.get('id')
+      - "{{ homelab_data_path }}/backrest/config/config.json"
+      - "{{ homelab_backups_path }}/restic/config"
+      - "{{ homelab_backrest_plan }}"
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Inspect Backrest mounted directories
+  ansible.builtin.stat:
+    path: "{{ homelab_data_path }}/backrest/{{ item }}"
+    follow: false
+  loop: [config, data, cache, tmp]
+  register: homelab_backrest_directories
+
+- name: Reject files and symlinks in Backrest directory paths
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir | default(false))
+      - not (item.stat.islnk | default(false))
+  loop: "{{ homelab_backrest_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Create only missing Backrest cache and temporary directories
+  ansible.builtin.file:
+    path: "{{ item.stat.path | default(homelab_data_path ~ '/backrest/' ~ item.item) }}"
+    state: directory
+    owner: "{{ homelab_owner }}"
+    group: "{{ homelab_group }}"
+    mode: '0700'
+  loop: "{{ homelab_backrest_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not item.stat.exists
+
+- name: Require Backrest's proxy network
+  community.docker.docker_network_info:
+    name: proxy
+  register: homelab_backrest_network
+
+- name: Verify the proxy network exists
+  ansible.builtin.assert:
+    that: [homelab_backrest_network.exists]
+    fail_msg: Run prepare.yml before deploying Backrest.
+
+- name: Validate Backrest Compose configuration
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/backrest", config, --format, json]
+  changed_when: false
+  check_mode: false
+  register: homelab_backrest_compose
+  no_log: true
+
+- name: Require Compose to mount the validated recovery paths
+  ansible.builtin.assert:
+    that:
+      - homelab_backrest_mounts | selectattr('target', 'equalto', item.target) | map(attribute='source') | list == [item.source]
+      - homelab_backrest_mounts | selectattr('target', 'equalto', item.target) | map(attribute='type') | list == ['bind']
+      - homelab_backrest_mounts | selectattr('target', 'equalto', item.target) | map(attribute='read_only', default=false) | list == [item.read_only]
+    fail_msg: Update Backrest Compose mounts and inventory together before deployment.
+  vars:
+    homelab_backrest_mounts: "{{ (homelab_backrest_compose.stdout | from_json).services.backrest.volumes }}"
+  loop:
+    - {target: /data, source: "{{ homelab_data_path }}/backrest/data", read_only: false}
+    - {target: /config, source: "{{ homelab_data_path }}/backrest/config", read_only: false}
+    - {target: /cache, source: "{{ homelab_data_path }}/backrest/cache", read_only: false}
+    - {target: /tmp, source: "{{ homelab_data_path }}/backrest/tmp", read_only: false}
+    - {target: /repos, source: "{{ homelab_backups_path }}", read_only: false}
+    - {target: /userdata/homelab, source: "{{ homelab_repo_path }}", read_only: true}
+  loop_control:
+    label: "{{ item.target }}"
+
+- name: Inspect existing Backrest before reconciling its container
+  community.docker.docker_container_info:
+    name: backrest
+  register: homelab_backrest_existing
+  no_log: true
+
+- name: Wait for existing backup operations to finish before deployment
+  ansible.builtin.uri:
+    url: "http://{{ homelab_backrest_existing.container.NetworkSettings.Networks.proxy.IPAddress }}:9898/v1.Backrest/GetOperations"
+    method: POST
+    body_format: json
+    body: {selector: {}}
+    use_proxy: false
+    status_code: 200
+    timeout: 10
+  register: homelab_backrest_idle
+  until: >-
+    homelab_backrest_idle.status | default(0) == 200 and
+    homelab_backrest_idle.json.operations | default([]) | selectattr('status', 'equalto', 'STATUS_INPROGRESS') | list | length == 0
+  retries: 12
+  delay: 5
+  when:
+    - homelab_backrest_existing.exists
+    - homelab_backrest_existing.container.State.Running | default(false)
+  no_log: true
+
+- name: Deploy Backrest from its existing Compose definition
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/backrest"
+    project_name: backrest
+    files: [docker-compose.yml]
+    state: present
+    pull: missing
+    build: never
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+  no_log: true
+
+- name: Verify Backrest web interface through trusted HTTPS
+  ansible.builtin.uri:
+    url: "{{ homelab_backrest_url }}"
+    ca_path: "{{ homelab_backrest_ca_path }}"
+    validate_certs: true
+    use_proxy: false
+    follow_redirects: none
+    status_code: 200
+    timeout: 10
+  register: homelab_backrest_http
+  until: homelab_backrest_http.status | default(0) == 200
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode
+
+- name: Verify saved backup operations through the Backrest API
+  ansible.builtin.uri:
+    url: "{{ homelab_backrest_url }}/v1.Backrest/GetOperations"
+    method: POST
+    body_format: json
+    body: {selector: {planId: "{{ homelab_backrest_plan }}"}}
+    ca_path: "{{ homelab_backrest_ca_path }}"
+    validate_certs: true
+    use_proxy: false
+    status_code: 200
+    timeout: 10
+  register: homelab_backrest_operations
+  until: homelab_backrest_operations.status | default(0) == 200
+  retries: 6
+  delay: 5
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Require existing backup history for the configured plan
+  ansible.builtin.assert:
+    that:
+      - homelab_backrest_operations.json.operations | default([]) | length > 0
+    fail_msg: Backrest started but the restored plan has no visible operation history.
+  when: not ansible_check_mode
+  no_log: true

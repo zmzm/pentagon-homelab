@@ -1,0 +1,113 @@
+---
+- name: Require a controller-local recovery bundle
+  ansible.builtin.assert:
+    that:
+      - homelab_recovery_bundle is defined
+      - homelab_recovery_bundle is match('^/[A-Za-z0-9_./-]+$')
+
+- name: Read the source manifest on the controller
+  ansible.builtin.set_fact:
+    homelab_staging_manifest: "{{ lookup('ansible.builtin.file', homelab_recovery_bundle ~ '/manifest.json') | from_json }}"
+
+- name: Validate bundle identity and target base
+  ansible.builtin.assert:
+    that:
+      - homelab_staging_manifest.bundle_id is match('^[0-9a-f]{32}$')
+      - homelab_staging_manifest.files | length > 1
+      - "'project.tar' in homelab_staging_manifest.files"
+      - homelab_staging_base == '/var/lib/homelab-recovery-staging' or homelab_staging_base is match('^/tmp/homelab-recovery-staging-[A-Za-z0-9_-]+$')
+
+- name: Select a new staging directory without using any live data path
+  ansible.builtin.set_fact:
+    homelab_staging_target: "{{ homelab_staging_base }}/{{ homelab_staging_manifest.bundle_id }}"
+
+- name: Refuse prior staging directories, symlinks and live checkout paths
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        import pathlib, shutil, sys
+        target, repository = map(pathlib.Path, sys.argv[1:3])
+        assert target.absolute() == target.resolve(), 'Staging path traverses a symlink'
+        assert not target.exists(), 'Refuse to overwrite an existing staging directory'
+        assert not target.is_relative_to(repository) and not repository.is_relative_to(target)
+        ancestor = target.parent
+        while not ancestor.exists():
+            ancestor = ancestor.parent
+        assert shutil.disk_usage(ancestor).free >= int(sys.argv[3]) + 512 * 1024**2
+      - "{{ homelab_staging_target }}"
+      - "{{ homelab_repo_path }}"
+      - "{{ homelab_staging_manifest.files.values() | map(attribute='size') | sum | string }}"
+  changed_when: false
+  check_mode: false
+
+- name: Stage encrypted recovery material without extracting or deploying it
+  when: not ansible_check_mode
+  block:
+    - name: Ensure the dedicated private staging base
+      ansible.builtin.file:
+        path: "{{ homelab_staging_base }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Reserve the new directory atomically
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, -B, -c, 'import os, sys; os.mkdir(sys.argv[1], 0o700)', "{{ homelab_staging_target }}"]
+      register: homelab_staging_reserved
+
+    - name: Copy the encrypted repository and public source archive
+      ansible.builtin.copy:
+        src: "{{ homelab_recovery_bundle }}/"
+        dest: "{{ homelab_staging_target }}/"
+        owner: root
+        group: root
+        mode: '0600'
+        directory_mode: '0700'
+
+    - name: Verify every staged file before reporting readiness
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -B
+          - -c
+          - |
+            import hashlib, json, pathlib, sys, tarfile
+            root = pathlib.Path(sys.argv[1])
+            manifest = json.loads((root / 'manifest.json').read_text())
+            actual = {str(path.relative_to(root)) for path in root.rglob('*') if path.is_file()}
+            assert actual == set(manifest['files']) | {'manifest.json'}
+            for relative, expected in manifest['files'].items():
+                name = pathlib.PurePosixPath(relative)
+                assert not name.is_absolute() and '..' not in name.parts
+                path = root / relative
+                assert not path.is_symlink() and path.stat().st_size == expected['size']
+                with path.open('rb') as stream:
+                    assert hashlib.file_digest(stream, 'sha256').hexdigest() == expected['sha256']
+            with tarfile.open(root / 'project.tar') as archive:
+                for member in archive.getmembers():
+                    path = pathlib.PurePosixPath(member.name)
+                    assert member.isfile() and not path.is_absolute() and '..' not in path.parts
+                    assert path.parts[0] not in ('data', 'backups', '.git', '.codex', '.agents')
+                    assert path.name not in ('inventory.ssh.yml', 'id_rsa', 'id_ed25519', 'known_hosts', 'authorized_keys')
+                    assert not path.name.endswith(('.vault.yml', '.env'))
+                    assert not path.name.startswith('.env') or path.name.endswith('.example')
+                    assert path.suffix not in ('.key', '.pem', '.p12', '.pfx', '.crt', '.csr')
+          - "{{ homelab_staging_target }}"
+      changed_when: false
+  rescue:
+    - name: Remove only the directory reserved by this run after a failed copy
+      ansible.builtin.file:
+        path: "{{ homelab_staging_target }}"
+        state: absent
+      when: homelab_staging_reserved.rc | default(-1) == 0
+
+    - ansible.builtin.fail:
+        msg: Recovery staging failed. A directory newly reserved by this run was removed; existing data was not overwritten.
+
+- name: Report staging readiness without applying recovery data
+  ansible.builtin.debug:
+    msg: "{{ 'Preview only; would stage encrypted recovery material at ' if ansible_check_mode else 'Verified encrypted recovery material staged at ' }}{{ homelab_staging_target }}. No archive was extracted and no service was deployed."

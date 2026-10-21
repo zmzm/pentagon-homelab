@@ -1,0 +1,22 @@
+{
+  "pronounceable_name": "Pentagon — public Matrix availability",
+  "url": "https://matrix.pentagonlab.org/_matrix/client/versions",
+  "monitor_type": "keyword",
+  "required_keyword": "\"versions\"",
+  "check_frequency": 180,
+  "request_timeout": 15,
+  "confirmation_period": 180,
+  "recovery_period": 180,
+  "http_method": "GET",
+  "request_headers": [
+    {"name": "User-Agent", "value": "Pentagon-Uptime-Monitor/1.0"}
+  ],
+  "follow_redirects": false,
+  "verify_ssl": true,
+  "email": true,
+  "sms": false,
+  "call": false,
+  "push": false,
+  "critical_alert": false,
+  "paused": false
+}

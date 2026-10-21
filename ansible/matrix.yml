@@ -1,0 +1,10 @@
+---
+- name: Verify homelab before deploying Matrix
+  ansible.builtin.import_playbook: site.yml
+
+- name: Deploy and verify Matrix
+  hosts: homelab
+  gather_facts: false
+  become: true
+  roles:
+    - role: matrix

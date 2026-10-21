@@ -150,6 +150,29 @@ def database_dump_status(config, now):
     return {'level': level, 'message': f'Matrix database dump is {max(age, 0) / 3600:.1f} hours old'}
 
 
+def recovery_status(config, now):
+    path = Path(config['status_file'])
+    if not path.is_file():
+        return {'level': 'critical', 'message': 'No scheduled recovery verification result exists'}
+    status = json.loads(path.read_text())
+    last_success = status.get('last_success_at')
+    started = status.get('started_at')
+    if not isinstance(started, (int, float)) or started > now + 300:
+        return {'level': 'critical', 'message': 'Recovery verification timestamp is invalid'}
+    if status.get('status') == 'running':
+        if now - started > config['maximum_running_minutes'] * 60:
+            return {'level': 'critical', 'message': 'Recovery verification is stuck or was interrupted'}
+        if last_success is None:
+            return {'level': 'ok', 'message': 'Initial recovery verification is running'}
+    elif status.get('status') != 'success':
+        return {'level': 'critical', 'message': 'Latest recovery verification failed; inspect its private log'}
+    if not isinstance(last_success, (int, float)) or last_success > now + 300:
+        return {'level': 'critical', 'message': 'Recovery verification success timestamp is invalid'}
+    age = max(0, now - last_success) / 3600
+    level = 'critical' if age > config['maximum_age_hours'] else 'ok'
+    return {'level': level, 'message': f'Last successful recovery verification is {age:.1f} hours old'}
+
+
 def collect(config, now):
     results = {}
     def check(key, function):
@@ -206,6 +229,8 @@ def collect(config, now):
     check('backup', backrest_check)
     if config.get('database_dump'):
         check('backup:matrix-database', lambda: database_dump_status(config['database_dump'], now))
+    if config.get('recovery_test'):
+        check('backup:recovery', lambda: recovery_status(config['recovery_test'], now))
     return results
 
 

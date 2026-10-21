@@ -1,0 +1,7 @@
+---
+- ansible.builtin.import_playbook: remote-preflight.yml
+- name: Stage recovery material on the verified replacement without restoring it
+  hosts: homelab
+  gather_facts: false
+  become: true
+  roles: [recovery_staging]

@@ -41,9 +41,9 @@ def login() -> tuple[str, int]:
     validity = int(session.get("validity", 300))
 
     if not sid:
-        raise RuntimeError(f"Pi-hole auth succeeded but SID missing: {data}")
+        raise RuntimeError("Pi-hole authentication returned no session ID")
 
-    log(f"NEW SID created: {sid!r}, validity={validity}")
+    log(f"Pi-hole session created; validity={validity}s")
     return sid, validity
 
 
@@ -56,9 +56,9 @@ def logout(sid: str | None) -> None:
             headers={"X-FTL-SID": sid},
             timeout=REQUEST_TIMEOUT,
         )
-        log(f"logout({sid!r}) -> {resp.status_code}")
+        log(f"Pi-hole logout status: {resp.status_code}")
     except Exception as e:
-        log(f"logout error: {e}")
+        log(f"Pi-hole logout failed ({type(e).__name__})")
 
 
 def clear_cached_sid() -> None:
@@ -66,7 +66,7 @@ def clear_cached_sid() -> None:
     old_sid = _cached_sid
     _cached_sid = None
     _sid_expires_at = 0
-    log(f"Clearing cached SID: {old_sid!r}")
+    log("Clearing cached Pi-hole session")
     logout(old_sid)
 
 
@@ -77,7 +77,7 @@ def get_sid() -> str:
         now = time.time()
 
         if _cached_sid and now < (_sid_expires_at - 10):
-            log(f"Using cached SID: {_cached_sid!r}")
+            log("Using cached Pi-hole session")
             return _cached_sid
 
         old_sid = _cached_sid
@@ -95,7 +95,7 @@ def get_sid() -> str:
 def fetch_summary() -> dict:
     sid = get_sid()
 
-    log(f"Calling /api/stats/summary with SID: {sid!r}")
+    log("Requesting Pi-hole statistics summary")
     resp = http.get(
         f"{PIHOLE_BASE_URL}/api/stats/summary",
         headers={"X-FTL-SID": sid},
@@ -164,8 +164,9 @@ def pihole_summary():
         return jsonify(result)
 
     except Exception as e:
-        log(f"ERROR: {e}")
-        return jsonify({"status": "error", "error": str(e)}), 500
+        error_type = type(e).__name__
+        log(f"Pi-hole summary failed ({error_type})")
+        return jsonify({"status": "error", "error": error_type}), 500
 
 
 if __name__ == "__main__":

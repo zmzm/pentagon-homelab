@@ -1,0 +1,115 @@
+---
+- name: Inspect Portainer recovery prerequisites
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ homelab_apps_path }}/portainer/docker-compose.yml"
+    - "{{ homelab_data_path }}/portainer/data/portainer.db"
+    - "{{ homelab_portainer_ca_path }}"
+  register: homelab_portainer_files
+
+- name: Require restored Portainer database and local Caddy CA
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isreg | default(false)
+      - not item.stat.islnk | default(false)
+    fail_msg: "Restore the required file before deploying Portainer: {{ item.item }}"
+  loop: "{{ homelab_portainer_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect Portainer environment file
+  ansible.builtin.stat:
+    path: "{{ homelab_apps_path }}/portainer/.env"
+    follow: false
+  register: homelab_portainer_env
+
+- name: Require a regular environment file or a supplied Vault key
+  ansible.builtin.assert:
+    that:
+      - not (homelab_portainer_env.stat.islnk | default(false))
+      - not homelab_portainer_env.stat.exists or (homelab_portainer_env.stat.isreg | default(false))
+      - homelab_portainer_env.stat.exists or vault_portainer_homepage_widget_key is defined
+    fail_msg: Restore apps/portainer/.env or supply the encrypted Portainer variables file.
+
+- name: Require the existing proxy network
+  community.docker.docker_network_info:
+    name: proxy
+  register: homelab_portainer_network
+
+- name: Verify the proxy network exists
+  ansible.builtin.assert:
+    that:
+      - homelab_portainer_network.exists
+    fail_msg: Run prepare.yml before deploying Portainer.
+
+- name: Validate supplied Portainer widget key
+  ansible.builtin.assert:
+    that:
+      - vault_portainer_homepage_widget_key is string
+      - vault_portainer_homepage_widget_key is match('^[A-Za-z0-9_.~+/=-]+$')
+      - vault_portainer_homepage_widget_key != 'REPLACE_WITH_EXISTING_KEY'
+  when: vault_portainer_homepage_widget_key is defined
+  no_log: true
+
+- name: Render Portainer environment from Vault variables
+  ansible.builtin.template:
+    src: portainer.env.j2
+    dest: "{{ homelab_apps_path }}/portainer/.env"
+    owner: "{{ homelab_owner }}"
+    group: "{{ homelab_group }}"
+    mode: '0600'
+  when: vault_portainer_homepage_widget_key is defined
+  no_log: true
+  diff: false
+
+- name: Restrict an existing Portainer environment file
+  ansible.builtin.file:
+    path: "{{ homelab_apps_path }}/portainer/.env"
+    mode: '0600'
+  when:
+    - vault_portainer_homepage_widget_key is not defined
+    - homelab_portainer_env.stat.exists
+
+- name: Validate Portainer Compose without displaying configuration secrets
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/portainer", config, --quiet]
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: not ansible_check_mode or homelab_portainer_env.stat.exists
+
+- name: Deploy Portainer from its existing Compose definition
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/portainer"
+    project_name: portainer
+    files: [docker-compose.yml]
+    state: present
+    pull: missing
+    build: never
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+  no_log: true
+  when: not ansible_check_mode or homelab_portainer_env.stat.exists
+
+- name: Verify Portainer API through DNS and Caddy with trusted local TLS
+  ansible.builtin.uri:
+    url: "{{ homelab_portainer_url }}/api/status"
+    ca_path: "{{ homelab_portainer_ca_path }}"
+    validate_certs: true
+    status_code: 200
+    follow_redirects: none
+    use_proxy: false
+    return_content: false
+    timeout: 10
+  register: homelab_portainer_http
+  until: >-
+    homelab_portainer_http.status | default(0) == 200 and
+    homelab_portainer_http.json.Version | default('') | length > 0
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode

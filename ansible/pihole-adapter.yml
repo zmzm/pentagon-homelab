@@ -1,0 +1,10 @@
+---
+- name: Verify homelab before deploying the Pi-hole adapter
+  ansible.builtin.import_playbook: site.yml
+
+- name: Deploy and verify the Pi-hole adapter
+  hosts: homelab
+  gather_facts: false
+  become: true
+  roles:
+    - role: pihole_adapter

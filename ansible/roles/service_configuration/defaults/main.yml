@@ -1,0 +1,26 @@
+---
+homelab_matrix_homeserver:
+  server_name: pentagonlab.org
+  pid_file: /data/homeserver.pid
+  listeners:
+    - port: 8008
+      resources: [{compress: false, names: [client, federation]}]
+      tls: false
+      type: http
+      x_forwarded: true
+  database:
+    name: psycopg2
+    args: {user: synapse, database: synapse, host: postgres, port: 5432}
+  log_config: /data/pentagonlab.org.log.config
+  media_store_path: /data/media_store
+  report_stats: false
+  signing_key_path: /data/pentagonlab.org.signing.key
+  public_baseurl: https://matrix.pentagonlab.org/
+  enable_registration: false
+  trusted_key_servers: [{server_name: matrix.org}]
+  user_directory: {enabled: true, search_all_users: true}
+homelab_cloudflared_configuration:
+  ingress:
+    - {hostname: matrix.pentagonlab.org, service: 'http://127.0.0.1:8008'}
+    - {hostname: vladjik.dev, service: 'http://127.0.0.1:9090'}
+    - {service: 'http_status:404'}

@@ -1,0 +1,101 @@
+---
+- name: Verify replacement host over SSH without provisioning it
+  hosts: homelab
+  gather_facts: false
+  become: true
+
+  tasks:
+    # Assertions run on the controller before the first remote connection.
+    - name: Require one explicitly configured replacement target using SSH
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - inventory_hostname in (groups['homelab_replacement'] | default([]))
+          - ansible_connection | default('') in ['ssh', 'ansible.builtin.ssh']
+          - ansible_host | default('') | trim | length > 0
+          - ansible_user | default('') | trim | length > 0
+          - "'REPLACE_WITH_' not in (ansible_host | default(''))"
+          - "'REPLACE_WITH_' not in (ansible_user | default(''))"
+          - homelab_expected_hostname | default('') | trim | length > 0
+          - "'REPLACE_WITH_' not in (homelab_expected_hostname | default(''))"
+          - homelab_expected_machine_id | default('') is match('^[0-9a-f]{32}$')
+          - homelab_repo_path is match('^/[A-Za-z0-9_./-]+$')
+        fail_msg: Use one configured replacement host from inventory.ssh.yml with SSH and trusted target identity values.
+
+    - name: Read target identity and preparation prerequisites without changing them
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -B
+          - -c
+          - |
+            import grp, json, os, pathlib, platform, pwd, shutil, socket
+            import sys
+            owner, group, checkout = sys.argv[1:]
+            folder = pathlib.Path(checkout)
+            probe = folder
+            while not probe.exists() and probe != probe.parent:
+                probe = probe.parent
+            def exists(database, value):
+                try:
+                    database(value)
+                    return True
+                except KeyError:
+                    return False
+            release = platform.freedesktop_os_release()
+            sources = pathlib.Path('/etc/apt/sources.list.d')
+            docker_repository = any('download.docker.com' in path.read_text()
+                                    for path in sources.glob('*')
+                                    if path.is_file() and path.suffix in ('.list', '.sources'))
+            print(json.dumps({
+                'hostname': socket.gethostname(),
+                'machine_id': pathlib.Path('/etc/machine-id').read_text().strip(),
+                'debian_family': release.get('ID') in ('debian', 'ubuntu', 'raspbian') or 'debian' in release.get('ID_LIKE', '').split(),
+                'architecture': platform.machine(),
+                'systemd': pathlib.Path('/run/systemd/system').is_dir(),
+                'root_access': os.geteuid() == 0,
+                'owner_exists': exists(pwd.getpwnam, owner),
+                'group_exists': exists(grp.getgrnam, group),
+                'repo_exists': folder.is_dir() and not folder.is_symlink(),
+                'repo_path_safe': not folder.is_symlink() and (not folder.exists() or folder.is_dir()),
+                'free_gib': shutil.disk_usage(probe).free / 1024**3,
+                'docker_installed': shutil.which('docker') is not None,
+                'docker_repository_configured': docker_repository,
+            }))
+          - "{{ homelab_owner }}"
+          - "{{ homelab_group }}"
+          - "{{ homelab_repo_path }}"
+      register: homelab_remote_probe
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Require the expected target and supported preparation prerequisites
+      ansible.builtin.assert:
+        that:
+          - report.hostname == homelab_expected_hostname
+          - report.machine_id == homelab_expected_machine_id
+          - report.debian_family
+          - report.architecture in ['aarch64', 'x86_64']
+          - report.systemd
+          - report.root_access
+          - report.owner_exists
+          - report.group_exists
+          - report.repo_path_safe
+          - report.free_gib >= homelab_remote_minimum_free_gib | default(2) | float
+        fail_msg: Target identity or prerequisites differ; review the private inventory and target console before provisioning.
+      vars:
+        report: "{{ homelab_remote_probe.stdout | from_json }}"
+      no_log: true
+
+    - name: Show replacement preparation readiness without identity secrets
+      ansible.builtin.debug:
+        msg:
+          verified_target: "{{ homelab_expected_hostname }}"
+          architecture: "{{ report.architecture }}"
+          repository_present: "{{ report.repo_exists }}"
+          docker_installed: "{{ report.docker_installed }}"
+          docker_repository_configured: "{{ report.docker_repository_configured }}"
+          next_step: Review remote provisioning instructions; this check installed or restored nothing.
+      vars:
+        report: "{{ homelab_remote_probe.stdout | from_json }}"

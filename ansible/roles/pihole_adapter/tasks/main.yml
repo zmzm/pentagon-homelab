@@ -1,0 +1,164 @@
+---
+- name: Inspect Pi-hole adapter source and restored environment
+  ansible.builtin.stat:
+    path: "{{ homelab_apps_path }}/pihole-adapter/{{ item }}"
+    follow: false
+  loop: [docker-compose.yml, Dockerfile, requirements.txt, app.py, .env]
+  register: homelab_pihole_adapter_files
+
+- name: Require versioned adapter sources and restored environment
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.size | default(0) > 0
+    fail_msg: "Restore the required Pi-hole adapter file: {{ item.item }}"
+  loop: "{{ homelab_pihole_adapter_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not (item.item == '.env' and vault_pihole_adapter_environment is defined and not item.stat.exists)
+
+- name: Validate supplied adapter Vault settings privately
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        import json, sys, urllib.parse
+        config = json.load(sys.stdin)
+        assert set(config) == {'PIHOLE_BASE_URL', 'PIHOLE_PASSWORD', 'REQUEST_TIMEOUT', 'SUMMARY_CACHE_TTL'}
+        assert all(isinstance(value, str) and value and not any(c in value for c in "'\\\n\r\x00") for value in config.values())
+        url = urllib.parse.urlsplit(config['PIHOLE_BASE_URL'])
+        assert url.scheme in ('http', 'https') and url.hostname and not url.username and not url.password
+        assert int(config['REQUEST_TIMEOUT']) > 0 and int(config['SUMMARY_CACHE_TTL']) >= 0
+    stdin: "{{ vault_pihole_adapter_environment | to_json }}"
+  when: vault_pihole_adapter_environment is defined
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Read existing adapter environment before Vault adoption
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/pihole-adapter", config, --format, json]
+  when: vault_pihole_adapter_environment is defined and homelab_pihole_adapter_files.results[4].stat.exists
+  register: homelab_pihole_adapter_before_vault
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Refuse implicit adapter password rotation
+  ansible.builtin.assert:
+    that:
+      - vault_pihole_adapter_environment.PIHOLE_PASSWORD == (homelab_pihole_adapter_before_vault.stdout | from_json).services['pihole-adapter'].environment.PIHOLE_PASSWORD
+  when: vault_pihole_adapter_environment is defined and homelab_pihole_adapter_files.results[4].stat.exists
+  no_log: true
+
+- name: Refuse to discard unrelated adapter environment settings
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        import pathlib, sys
+        lines = [line.strip() for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.strip() and not line.lstrip().startswith('#')]
+        names = [line.split('=', 1)[0] for line in lines]
+        assert len(names) == 4 and set(names) == {'PIHOLE_BASE_URL', 'PIHOLE_PASSWORD', 'REQUEST_TIMEOUT', 'SUMMARY_CACHE_TTL'}
+      - "{{ homelab_apps_path }}/pihole-adapter/.env"
+  when: vault_pihole_adapter_environment is defined and homelab_pihole_adapter_files.results[4].stat.exists
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Render private adapter environment from Vault
+  ansible.builtin.template:
+    src: adapter.env.j2
+    dest: "{{ homelab_apps_path }}/pihole-adapter/.env"
+    owner: "{{ homelab_owner }}"
+    group: "{{ homelab_group }}"
+    mode: '0600'
+  when: vault_pihole_adapter_environment is defined
+  no_log: true
+  diff: false
+
+- name: Require the adapter proxy network
+  community.docker.docker_network_info:
+    name: proxy
+  register: homelab_pihole_adapter_network
+
+- name: Verify the proxy network exists
+  ansible.builtin.assert:
+    that: [homelab_pihole_adapter_network.exists]
+    fail_msg: Run prepare.yml before deploying the Pi-hole adapter.
+
+- name: Validate adapter Compose without exposing credentials
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/pihole-adapter", config, --format, json]
+  changed_when: false
+  check_mode: false
+  register: homelab_pihole_adapter_compose
+  no_log: true
+
+- name: Require a working credential configuration and supported build policy
+  ansible.builtin.assert:
+    that:
+      - homelab_pihole_adapter_build in ['policy', 'always', 'never']
+      - homelab_pihole_adapter_environment.PIHOLE_PASSWORD | default('') | length > 0
+      - homelab_pihole_adapter_environment.PIHOLE_BASE_URL | default('') is match('^https?://[^/]+')
+      - homelab_pihole_adapter_environment.REQUEST_TIMEOUT | int > 0
+      - homelab_pihole_adapter_environment.SUMMARY_CACHE_TTL | int >= 0
+  vars:
+    homelab_pihole_adapter_environment: "{{ (homelab_pihole_adapter_compose.stdout | from_json).services['pihole-adapter'].environment }}"
+  no_log: true
+
+- name: Restrict restored adapter environment permissions
+  ansible.builtin.file:
+    path: "{{ homelab_apps_path }}/pihole-adapter/.env"
+    mode: '0600'
+
+- name: Deploy the Pi-hole adapter from its existing Compose definition
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/pihole-adapter"
+    project_name: pihole-adapter
+    files: [docker-compose.yml]
+    state: present
+    pull: missing
+    build: "{{ homelab_pihole_adapter_build }}"
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+  no_log: true
+
+- name: Inspect the deployed adapter's private network address
+  community.docker.docker_container_info:
+    name: pihole-adapter
+  register: homelab_pihole_adapter_container
+  when: not ansible_check_mode
+  no_log: true
+
+- name: Verify adapter health
+  ansible.builtin.uri:
+    url: "http://{{ homelab_pihole_adapter_container.container.NetworkSettings.Networks.proxy.IPAddress }}:8000/health"
+    use_proxy: false
+    status_code: 200
+    timeout: 10
+  register: homelab_pihole_adapter_health
+  until: homelab_pihole_adapter_health.status | default(0) == 200 and homelab_pihole_adapter_health.json.ok | default(false)
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode
+
+- name: Verify authenticated Pi-hole summary without displaying its response
+  ansible.builtin.uri:
+    url: "http://{{ homelab_pihole_adapter_container.container.NetworkSettings.Networks.proxy.IPAddress }}:8000/pihole-summary"
+    use_proxy: false
+    status_code: 200
+    timeout: 20
+  register: homelab_pihole_adapter_summary
+  until: homelab_pihole_adapter_summary.status | default(0) == 200 and homelab_pihole_adapter_summary.json.status | default('') == 'online'
+  retries: 6
+  delay: 5
+  no_log: true
+  when: not ansible_check_mode

@@ -1,0 +1,275 @@
+---
+- name: Require systemd and paths supported by the existing scripts
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.service_mgr == 'systemd'
+      - homelab_repo_path is match('^/[A-Za-z0-9_./-]+$')
+      - homelab_data_path == homelab_repo_path ~ '/data'
+    fail_msg: Scheduled jobs require systemd and a checkout path without spaces or systemd specifiers.
+
+- name: Read the versioned monitoring configuration
+  ansible.builtin.set_fact:
+    homelab_scheduled_monitor_config: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../monitoring/config.json') | from_json }}"
+
+- name: Require the supported Matrix notification configuration
+  ansible.builtin.assert:
+    that:
+      - homelab_scheduled_monitor_config.notification.type == 'matrix'
+      - homelab_scheduled_monitor_config.notification.credentials_file == 'data/monitoring/matrix.json'
+      - homelab_scheduled_monitor_config.notification.allowed_users | length > 0
+      - homelab_scheduled_monitor_config.database_dump.path == 'data/matrix/database-backup/synapse.dump'
+      - homelab_scheduled_monitor_config.recovery_test.status_file == '/var/lib/homelab-recovery/status.json'
+    fail_msg: Review the role prerequisites when changing monitoring credential or database dump paths.
+
+- name: Inspect restored notification credentials and Caddy CA
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ homelab_data_path }}/monitoring"
+    - "{{ homelab_data_path }}/monitoring/matrix.json"
+    - "{{ homelab_homepage_ca_path }}"
+    - "{{ homelab_data_path }}/backrest/config/config.json"
+    - "{{ homelab_backups_path }}/restic/config"
+  register: homelab_scheduled_recovery_files
+
+- name: Require existing notification directory
+  ansible.builtin.assert:
+    that:
+      - homelab_scheduled_recovery_files.results[0].stat.isdir | default(false)
+      - not (homelab_scheduled_recovery_files.results[0].stat.islnk | default(false))
+    fail_msg: Restore data/monitoring and its Matrix credentials from backup first.
+
+- name: Require restored notification credentials and Caddy CA files
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+    fail_msg: "Restore the required recovery file: {{ item.item }}"
+  loop: "{{ homelab_scheduled_recovery_files.results[1:] }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect the recovery repository lock directory
+  ansible.builtin.stat:
+    path: "{{ homelab_backups_path }}/restic/locks"
+    follow: false
+  register: homelab_scheduled_recovery_locks
+
+- name: Require a real repository lock directory before scheduling recovery
+  ansible.builtin.assert:
+    that:
+      - homelab_backups_path == homelab_repo_path ~ '/backups'
+      - homelab_scheduled_recovery_locks.stat.isdir | default(false)
+      - not (homelab_scheduled_recovery_locks.stat.islnk | default(false))
+    fail_msg: Restore the local Restic repository before scheduling recovery verification.
+
+- name: Validate notification credentials without displaying their contents
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        import json, sys
+        from urllib.parse import urlsplit
+        with open(sys.argv[1]) as source:
+            credentials = json.load(source)
+        assert all(isinstance(credentials.get(key), str) and credentials[key].strip()
+                   for key in ('homeserver', 'room_id', 'access_token'))
+        url = urlsplit(credentials['homeserver'])
+        assert url.scheme == 'https' or (url.scheme == 'http' and url.hostname in ('localhost', '127.0.0.1', '::1'))
+        assert credentials['room_id'].startswith('!')
+      - "{{ homelab_data_path }}/monitoring/matrix.json"
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Verify required executables
+  ansible.builtin.command:
+    argv: "{{ item }}"
+  loop:
+    - [docker, version]
+    - [curl, --version]
+    - [systemd-analyze, --version]
+    - [restic, version]
+    - [/usr/bin/python3, -B, -c, 'import yaml']
+  changed_when: false
+  check_mode: false
+
+- name: Inspect the existing Matrix database container
+  community.docker.docker_container_info:
+    name: matrix-postgres
+  register: homelab_scheduled_database
+  no_log: true
+
+- name: Require a running Matrix database before enabling backups
+  ansible.builtin.assert:
+    that:
+      - homelab_scheduled_database.exists
+      - homelab_scheduled_database.container.State.Running | default(false)
+    fail_msg: Restore and start the Matrix PostgreSQL service before installing scheduled jobs.
+
+- name: Inspect the Synapse image used for isolated recovery
+  community.docker.docker_container_info:
+    name: matrix-synapse
+  register: homelab_scheduled_synapse
+  no_log: true
+
+- name: Require installed Synapse before scheduling application recovery
+  ansible.builtin.assert:
+    that:
+      - homelab_scheduled_synapse.exists
+    fail_msg: Restore and deploy Matrix before scheduling application recovery tests.
+
+- name: Inspect Vaultwarden needed by expanded application recovery
+  community.docker.docker_container_info:
+    name: vaultwarden
+  register: homelab_scheduled_vaultwarden
+  no_log: true
+
+- name: Require installed Vaultwarden before scheduling its recovery tests
+  ansible.builtin.assert:
+    that: [homelab_scheduled_vaultwarden.exists]
+    fail_msg: Deploy Vaultwarden before enabling expanded application recovery tests.
+
+- name: Inspect managed directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ homelab_repo_path }}/scripts"
+    - "{{ homelab_repo_path }}/monitoring"
+    - "{{ homelab_data_path }}/matrix/database-backup"
+    - /var/lib/homelab-monitor
+    - /var/lib/homelab-recovery
+  register: homelab_scheduled_directories
+
+- name: Reject files or symlinks in managed directory paths
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - not item.stat.exists or (item.stat.isdir | default(false))
+      - not (item.stat.islnk | default(false))
+  loop: "{{ homelab_scheduled_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Ensure script and configuration directories exist
+  ansible.builtin.file:
+    path: "{{ homelab_repo_path }}/{{ item }}"
+    state: directory
+    owner: "{{ homelab_owner }}"
+    group: "{{ homelab_group }}"
+    mode: '0755'
+  loop: [scripts, monitoring]
+
+- name: Ensure private runtime directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - "{{ homelab_data_path }}/monitoring"
+    - "{{ homelab_data_path }}/matrix/database-backup"
+    - /var/lib/homelab-monitor
+    - /var/lib/homelab-recovery
+
+- name: Restrict restored notification credentials without changing their content
+  ansible.builtin.file:
+    path: "{{ homelab_data_path }}/monitoring/matrix.json"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Install versioned job scripts
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/{{ item }}"
+    dest: "{{ homelab_repo_path }}/scripts/{{ item }}"
+    owner: "{{ homelab_owner }}"
+    group: "{{ homelab_group }}"
+    mode: '0644'
+  loop: "{{ homelab_scheduled_job_scripts }}"
+
+- name: Install versioned monitoring configuration
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../monitoring/config.json"
+    dest: "{{ homelab_repo_path }}/monitoring/config.json"
+    owner: "{{ homelab_owner }}"
+    group: "{{ homelab_group }}"
+    mode: '0644'
+
+# Stage and verify the complete set before replacing any installed unit.
+# In check mode staging is temporary validation only, not a host deployment.
+- name: Validate and install the scheduled job units
+  block:
+    - name: Create temporary unit validation directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: homelab-systemd-
+      register: homelab_scheduled_unit_stage
+      changed_when: false
+      check_mode: false
+
+    - name: Stage units with the target repository path
+      ansible.builtin.copy:
+        content: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../monitoring/' ~ item.0 ~ '.' ~ item.1, rstrip=false) | replace(homelab_scheduled_job_source_path, homelab_repo_path) }}"
+        dest: "{{ homelab_scheduled_unit_stage.path }}/{{ item.0 }}.{{ item.1 }}"
+        mode: '0644'
+      loop: "{{ homelab_scheduled_job_names | product(['service', 'timer']) | list }}"
+      changed_when: false
+      check_mode: false
+
+    - name: Verify all staged systemd units before installation
+      ansible.builtin.command:
+        argv: "{{ ['systemd-analyze', 'verify'] + (homelab_scheduled_job_names | product(['service', 'timer']) | map('join', '.') | map('regex_replace', '^', homelab_scheduled_unit_stage.path ~ '/') | list) }}"
+      changed_when: false
+      check_mode: false
+
+    - name: Install verified systemd services and timers
+      ansible.builtin.copy:
+        src: "{{ homelab_scheduled_unit_stage.path }}/{{ item.0 }}.{{ item.1 }}"
+        remote_src: true
+        dest: "/etc/systemd/system/{{ item.0 }}.{{ item.1 }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: "{{ homelab_scheduled_job_names | product(['service', 'timer']) | list }}"
+      notify: Reload scheduled job units
+  always:
+    - name: Remove temporary unit validation files
+      ansible.builtin.file:
+        path: "{{ homelab_scheduled_unit_stage.path }}"
+        state: absent
+      when: homelab_scheduled_unit_stage.path is defined
+      changed_when: false
+      check_mode: false
+
+- name: Load changed units before enabling timers
+  ansible.builtin.meta: flush_handlers
+
+- name: Inspect installed timer definitions for preview support
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ item }}.timer"
+  loop: "{{ homelab_scheduled_job_names }}"
+  register: homelab_scheduled_installed_timers
+
+- name: Enable and start scheduled job timers
+  ansible.builtin.systemd_service:
+    name: "{{ item.item }}.timer"
+    enabled: true
+    state: started
+  loop: "{{ homelab_scheduled_installed_timers.results }}"
+  loop_control:
+    label: "{{ item.item }}.timer"
+  when: not ansible_check_mode or item.stat.exists
+
+- name: Verify timer activation and boot enablement
+  ansible.builtin.command:
+    argv: [systemctl, "{{ item.1 }}", --quiet, "{{ item.0 }}.timer"]
+  loop: "{{ homelab_scheduled_job_names | product(['is-active', 'is-enabled']) | list }}"
+  changed_when: false
+  when: not ansible_check_mode

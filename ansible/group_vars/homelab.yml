@@ -9,10 +9,25 @@ homelab_group: pentagon-admin
 homelab_homepage_url: https://dashboard.home.arpa
 homelab_homepage_ca_path: "{{ homelab_data_path }}/caddy/data/caddy/pki/authorities/local/root.crt"
 
-# Docker's Debian apt repository must already be configured for these packages.
+homelab_portainer_url: https://docker.home.arpa
+homelab_portainer_ca_path: "{{ homelab_homepage_ca_path }}"
+
+homelab_vaultwarden_url: https://vault.home.arpa
+homelab_vaultwarden_ca_path: "{{ homelab_homepage_ca_path }}"
+
+homelab_backrest_url: https://backrest.home.arpa
+homelab_backrest_ca_path: "{{ homelab_homepage_ca_path }}"
+homelab_backrest_plan: pentagon-backup
+
+homelab_unbound_image: ghcr.io/klutchell/unbound:latest
+homelab_unbound_test_name: example.com
+
+# Host preparation adds a missing official Docker repository and pins installed versions.
 homelab_prerequisite_packages:
   - docker-ce
   - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
   - docker-compose-plugin
   - git
   - curl
@@ -20,6 +35,7 @@ homelab_prerequisite_packages:
   - btop
   - restic
   - python3-requests
+  - python3-yaml
 
 # Ownership/modes apply only to newly created directories.
 homelab_directories:

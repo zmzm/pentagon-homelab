@@ -1,0 +1,22 @@
+---
+homelab_scheduled_job_names:
+  - homelab-monitor
+  - homelab-matrix-status
+  - homelab-matrix-backup
+  - homelab-recovery
+
+homelab_scheduled_job_scripts:
+  - monitor.py
+  - matrix_status.py
+  - backup_matrix_db.py
+  - recovery_test.py
+  - verify-backup.py
+  - verify_matrix_db.py
+  - verify_matrix_app.py
+  - verify_vaultwarden_app.py
+  - recovery_safety.py
+  - matrix_recovery_client.py
+  - vaultwarden_recovery_client.py
+
+# Canonical files remain in monitoring/; substitute the target checkout path.
+homelab_scheduled_job_source_path: /home/pentagon-admin/Documents/homelab

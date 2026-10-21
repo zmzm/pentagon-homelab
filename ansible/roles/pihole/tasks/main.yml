@@ -1,0 +1,213 @@
+---
+- name: Inspect restored Pi-hole directories
+  ansible.builtin.stat:
+    path: "{{ homelab_data_path }}/pihole/{{ item }}"
+    follow: false
+  loop: [etc-pihole, etc-dnsmasq.d]
+  register: homelab_pihole_directories
+
+- name: Require restored Pi-hole directories
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isdir | default(false)
+      - not (item.stat.islnk | default(false))
+    fail_msg: Restore both Pi-hole data directories before deployment.
+  loop: "{{ homelab_pihole_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Inspect Pi-hole recovery files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ homelab_apps_path }}/pihole/docker-compose.yml"
+    - "{{ homelab_data_path }}/pihole/etc-pihole/pihole.toml"
+    - "{{ homelab_data_path }}/pihole/etc-pihole/gravity.db"
+    - "{{ homelab_data_path }}/pihole/etc-pihole/pihole-FTL.db"
+    - "{{ homelab_data_path }}/pihole/etc-pihole/dnsmasq.conf"
+    - "{{ homelab_pihole_ca_path }}"
+  register: homelab_pihole_files
+
+- name: Require nonempty restored settings, databases, DNS configuration and CA
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.size | default(0) > 0
+    fail_msg: "Restore the required nonempty Pi-hole file before deployment: {{ item.item }}"
+  loop: "{{ homelab_pihole_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate restored settings and gravity database without exposing credentials
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        import ipaddress, json, pathlib, sqlite3, sys, tomllib
+        folder = pathlib.Path(sys.argv[1])
+        with (folder / 'pihole.toml').open('rb') as source:
+            config = tomllib.load(source)
+        dns = config['dns']
+        assert dns['upstreams'] == json.loads(sys.argv[2]), 'Review changed DNS upstreams before deployment'
+        assert dns.get('port', 53) == 53
+        assert not any(line.split(',')[0].strip().lower() == 'true' for line in dns.get('revServers', [])), 'Review conditional forwarding to avoid the previous DNS loop'
+        assert config.get('webserver', {}).get('api', {}).get('pwhash'), 'Restore the saved password hash'
+        records = {}
+        for line in dns.get('hosts', []):
+            fields = line.split('#', 1)[0].split()
+            if len(fields) < 2:
+                continue
+            address = ipaddress.ip_address(fields[0])
+            if address.version == 4:
+                for name in fields[1:]:
+                    records.setdefault(name.lower().rstrip('.'), set()).add(str(address))
+        names = json.loads(sys.argv[3])
+        assert all(records.get(name) for name in names), 'Restore required local DNS records'
+        with sqlite3.connect((folder / 'gravity.db').resolve().as_uri() + '?mode=ro', uri=True, timeout=10) as db:
+            db.execute('PRAGMA query_only=ON')
+            assert db.execute('PRAGMA quick_check').fetchall() == [('ok',)], 'Gravity database integrity check failed'
+            tables = {row[0] for row in db.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
+            assert {'adlist', 'domainlist', 'gravity'} <= tables, 'Gravity schema is missing'
+        print(json.dumps({'records': [{'name': name, 'addresses': sorted(records[name])} for name in names]}))
+      - "{{ homelab_data_path }}/pihole/etc-pihole"
+      - "{{ homelab_pihole_upstreams | to_json }}"
+      - "{{ homelab_pihole_local_names | to_json }}"
+  changed_when: false
+  check_mode: false
+  register: homelab_pihole_recovery
+  no_log: true
+
+- name: Validate Pi-hole Compose without displaying configuration
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/pihole", config, --format, json]
+  changed_when: false
+  check_mode: false
+  register: homelab_pihole_compose
+  no_log: true
+
+- name: Require host networking and restored settings to remain authoritative
+  ansible.builtin.assert:
+    that:
+      - homelab_pihole_service.image == homelab_pihole_image
+      - homelab_pihole_service.network_mode == 'host'
+      - homelab_pihole_service.volumes | selectattr('target', 'equalto', item.target) | map(attribute='source') | list == [item.source]
+      - homelab_pihole_service.volumes | selectattr('target', 'equalto', item.target) | map(attribute='type') | list == ['bind']
+      - homelab_pihole_service.volumes | selectattr('target', 'equalto', item.target) | map(attribute='read_only', default=false) | list == [false]
+      - homelab_pihole_service.environment.keys() | intersect(['WEBPASSWORD', 'FTLCONF_webserver_api_password', 'FTLCONF_dns_upstreams', 'FTLCONF_dns_hosts', 'FTLCONF_dns_revServers', 'FTLCONF_dns_port']) | length == 0
+    fail_msg: Review Pi-hole Compose mounts, networking and DNS/password overrides before deployment.
+  vars:
+    homelab_pihole_service: "{{ (homelab_pihole_compose.stdout | from_json).services.pihole }}"
+  loop:
+    - {target: /etc/pihole, source: "{{ homelab_data_path }}/pihole/etc-pihole"}
+    - {target: /etc/dnsmasq.d, source: "{{ homelab_data_path }}/pihole/etc-dnsmasq.d"}
+  loop_control:
+    label: "{{ item.target }}"
+
+- name: Verify Unbound is resolving before deploying Pi-hole
+  ansible.builtin.command:
+    argv: [dig, '@127.0.0.1', -p, '5335', "{{ homelab_pihole_test_name }}", A, '+time=5', '+tries=1', '+noall', '+comments', '+answer', "{{ item }}"]
+  loop: ['+notcp', '+tcp']
+  register: homelab_pihole_upstream_query
+  changed_when: false
+  check_mode: false
+  failed_when: >-
+    homelab_pihole_upstream_query.rc != 0 or
+    'status: NOERROR' not in homelab_pihole_upstream_query.stdout or
+    homelab_pihole_upstream_query.stdout is not search('\sIN\s+A\s+')
+
+- name: Inspect the installed Pi-hole image
+  community.docker.docker_image_info:
+    name: "{{ homelab_pihole_image }}"
+  register: homelab_pihole_image_info
+
+- name: Download Pi-hole only if its image is missing
+  community.docker.docker_image:
+    name: "{{ homelab_pihole_image }}"
+    source: pull
+    force_source: false
+
+- name: Validate restored DNS syntax in a disposable isolated container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - none
+      - --mount
+      - "type=bind,src={{ homelab_data_path }}/pihole/etc-pihole,dst=/etc/pihole,readonly"
+      - --mount
+      - "type=bind,src={{ homelab_data_path }}/pihole/etc-dnsmasq.d,dst=/etc/dnsmasq.d,readonly"
+      - --entrypoint
+      - pihole-FTL
+      - "{{ homelab_pihole_image }}"
+      - dnsmasq-test
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: not ansible_check_mode or homelab_pihole_image_info.images | length > 0
+
+- name: Deploy Pi-hole from its validated Compose definition
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/pihole"
+    project_name: pihole
+    files: [docker-compose.yml]
+    state: present
+    pull: missing
+    build: never
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+  no_log: true
+
+- name: Verify public DNS resolution through Pi-hole over UDP and TCP
+  ansible.builtin.command:
+    argv: [dig, '@127.0.0.1', -p, '53', "{{ homelab_pihole_test_name }}", A, '+time=5', '+tries=1', '+noall', '+comments', '+answer', "{{ item }}"]
+  loop: ['+notcp', '+tcp']
+  register: homelab_pihole_public_query
+  changed_when: false
+  until: >-
+    homelab_pihole_public_query.rc == 0 and
+    'status: NOERROR' in homelab_pihole_public_query.stdout and
+    homelab_pihole_public_query.stdout is search('\sIN\s+A\s+')
+  retries: 6
+  delay: 5
+  when: not ansible_check_mode
+
+- name: Verify restored local DNS records over UDP and TCP
+  ansible.builtin.command:
+    argv: [dig, '@127.0.0.1', -p, '53', "{{ item.0.name }}", A, '+time=5', '+tries=1', '+short', "{{ item.1 }}"]
+  loop: "{{ (homelab_pihole_recovery.stdout | from_json).records | product(['+notcp', '+tcp']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1 }}"
+  changed_when: false
+  register: homelab_pihole_local_query
+  until: >-
+    homelab_pihole_local_query.rc == 0 and
+    homelab_pihole_local_query.stdout_lines | unique | sort == item.0.addresses | sort
+  retries: 6
+  delay: 5
+  when: not ansible_check_mode
+
+- name: Verify Pi-hole admin interface through DNS and Caddy with trusted TLS
+  ansible.builtin.uri:
+    url: "{{ homelab_pihole_url }}/admin/"
+    ca_path: "{{ homelab_pihole_ca_path }}"
+    validate_certs: true
+    follow_redirects: safe
+    use_proxy: false
+    status_code: 200
+    timeout: 10
+  register: homelab_pihole_http
+  until: homelab_pihole_http.status | default(0) == 200
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode

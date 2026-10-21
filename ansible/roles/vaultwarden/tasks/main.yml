@@ -1,0 +1,117 @@
+---
+- name: Inspect restored Vaultwarden data directory
+  ansible.builtin.stat:
+    path: "{{ homelab_data_path }}/vaultwarden/data"
+    follow: false
+  register: homelab_vaultwarden_directory
+
+- name: Require the restored Vaultwarden data directory
+  ansible.builtin.assert:
+    that:
+      - homelab_vaultwarden_directory.stat.isdir | default(false)
+      - not (homelab_vaultwarden_directory.stat.islnk | default(false))
+    fail_msg: Restore the complete data/vaultwarden/data directory before deploying Vaultwarden.
+
+- name: Inspect Vaultwarden recovery prerequisites
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ homelab_apps_path }}/vaultwarden/docker-compose.yml"
+    - "{{ homelab_data_path }}/vaultwarden/data/db.sqlite3"
+    - "{{ homelab_data_path }}/vaultwarden/data/rsa_key.pem"
+    - "{{ homelab_vaultwarden_ca_path }}"
+  register: homelab_vaultwarden_files
+
+- name: Require existing Vaultwarden database, signing key, Compose definition and local CA
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.size | default(0) > 0
+    fail_msg: "Restore the required nonempty file before deploying Vaultwarden: {{ item.item }}"
+  loop: "{{ homelab_vaultwarden_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Check restored SQLite database integrity and Vaultwarden schema without exposing data
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        from pathlib import Path
+        import sqlite3
+        import sys
+        path = Path(sys.argv[1]).resolve()
+        with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=10) as db:
+            db.execute('PRAGMA query_only=ON')
+            assert db.execute('PRAGMA quick_check').fetchall() == [('ok',)], 'SQLite quick_check failed'
+            assert db.execute("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='users'").fetchone(), 'Vaultwarden users table is missing'
+      - "{{ homelab_data_path }}/vaultwarden/data/db.sqlite3"
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Inspect the shared proxy network
+  community.docker.docker_network_info:
+    name: proxy
+  register: homelab_vaultwarden_network
+
+- name: Require the existing proxy network
+  ansible.builtin.assert:
+    that:
+      - homelab_vaultwarden_network.exists
+    fail_msg: Run prepare.yml before deploying Vaultwarden.
+
+- name: Validate and read Vaultwarden Compose without displaying configuration
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ homelab_apps_path }}/vaultwarden", config, --format, json]
+  register: homelab_vaultwarden_compose
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Require Compose to use the validated Vaultwarden data directory
+  ansible.builtin.assert:
+    that:
+      - homelab_vaultwarden_mounts | length == 1
+      - homelab_vaultwarden_mounts[0].type == 'bind'
+      - homelab_vaultwarden_mounts[0].source == homelab_data_path ~ '/vaultwarden/data'
+      - not (homelab_vaultwarden_mounts[0].read_only | default(false))
+    fail_msg: Update Compose bind paths and inventory together before deploying Vaultwarden.
+  vars:
+    homelab_vaultwarden_mounts: "{{ (homelab_vaultwarden_compose.stdout | from_json).services.vaultwarden.volumes | selectattr('target', 'equalto', '/data') | list }}"
+
+- name: Deploy Vaultwarden from its existing Compose definition
+  community.docker.docker_compose_v2:
+    project_src: "{{ homelab_apps_path }}/vaultwarden"
+    project_name: vaultwarden
+    files: [docker-compose.yml]
+    state: present
+    pull: missing
+    build: never
+    recreate: auto
+    remove_orphans: false
+    wait: true
+    wait_timeout: 120
+  no_log: true
+
+- name: Verify Vaultwarden health and web vault through DNS and Caddy with trusted TLS
+  ansible.builtin.uri:
+    url: "{{ homelab_vaultwarden_url }}{{ item }}"
+    ca_path: "{{ homelab_vaultwarden_ca_path }}"
+    validate_certs: true
+    status_code: 200
+    follow_redirects: none
+    use_proxy: false
+    return_content: false
+    timeout: 10
+  loop: [/alive, /]
+  register: homelab_vaultwarden_http
+  until: homelab_vaultwarden_http.status | default(0) == 200
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode

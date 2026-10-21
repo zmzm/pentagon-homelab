@@ -1,0 +1,11 @@
+---
+homelab_caddy_image: caddy:2
+homelab_caddy_ca_directory: "{{ homelab_data_path }}/caddy/data/caddy/pki/authorities/local"
+homelab_caddy_check_routes: true
+homelab_caddy_route_checks:
+  - https://vault.home.arpa/alive
+  - https://docker.home.arpa/api/status
+  - https://pihole.home.arpa/admin/
+  - https://dashboard.home.arpa/
+  - https://backrest.home.arpa/
+  - https://interview-assistant.home.arpa/

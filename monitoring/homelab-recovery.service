@@ -1,0 +1,26 @@
+[Unit]
+Description=Isolated backup and Synapse recovery verification
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B /home/pentagon-admin/Documents/homelab/scripts/recovery_test.py
+StateDirectory=homelab-recovery
+StateDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=30min
+TimeoutStopSec=3min
+KillSignal=SIGINT
+Nice=15
+IOSchedulingClass=idle
+NoNewPrivileges=true
+# Docker must see the same temporary bind-mount paths as the verifier.
+PrivateTmp=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/tmp /home/pentagon-admin/Documents/homelab/backups/restic/locks
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true

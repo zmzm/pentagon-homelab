@@ -3,7 +3,7 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
     restart: unless-stopped
-    command: tunnel --config /etc/cloudflared/config.yml run
+    command: tunnel --config /etc/cloudflared/config.yml --metrics 127.0.0.1:20241 run
     network_mode: host
     volumes:
       - /home/pentagon-admin/Documents/homelab/data/cloudflared:/etc/cloudflared:ro

@@ -1,0 +1,11 @@
+---
+- name: Verify homelab before deploying Vaultwarden
+  ansible.builtin.import_playbook: site.yml
+
+- name: Deploy and verify Vaultwarden
+  hosts: homelab
+  gather_facts: false
+  become: true
+
+  roles:
+    - role: vaultwarden

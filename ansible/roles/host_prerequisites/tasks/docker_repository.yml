@@ -1,0 +1,91 @@
+---
+- name: Inspect existing Docker repositories before changing apt configuration
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - "{{ lookup('ansible.builtin.file', role_path ~ '/files/docker_repository.py') }}"
+      - --root
+      - "{{ homelab_docker_apt_root }}"
+      - --distribution
+      - "{{ homelab_docker_repository_os }}"
+      - --suite
+      - "{{ homelab_docker_repository_suite }}"
+      - --architecture
+      - "{{ homelab_docker_repository_arch }}"
+  register: homelab_docker_repository_inspection
+  changed_when: false
+  check_mode: false
+
+- name: Record the verified repository layout
+  ansible.builtin.set_fact:
+    homelab_docker_repository_plan: "{{ homelab_docker_repository_inspection.stdout | from_json }}"
+
+- name: Create missing apt repository and key directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ homelab_docker_apt_root }}/etc/apt/keyrings"
+    - "{{ homelab_docker_apt_root }}/etc/apt/sources.list.d"
+  when: not homelab_docker_repository_plan.existing and not ansible_check_mode
+
+- name: Download Docker signing key only for a missing repository
+  ansible.builtin.get_url:
+    url: "{{ homelab_docker_repository_plan.uri }}/gpg"
+    dest: "{{ homelab_docker_repository_plan.key_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+    validate_certs: true
+    force: false
+    timeout: 30
+  when: not homelab_docker_repository_plan.existing and not ansible_check_mode
+  register: homelab_docker_key_download
+
+- name: Inspect the repository signing key without importing it
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        import subprocess, sys, tempfile
+        with tempfile.TemporaryDirectory(prefix='docker-key-verify-', dir='/tmp') as folder:
+            result = subprocess.run(['gpg', '--homedir', folder, '--batch', '--show-keys', '--with-colons', sys.argv[1]],
+                                    capture_output=True, text=True, check=True)
+        fingerprints = []
+        primary = False
+        for line in result.stdout.splitlines():
+            fields = line.split(':')
+            if fields[0] == 'pub':
+                primary = True
+            elif fields[0] == 'fpr' and primary:
+                fingerprints.append(fields[9])
+                primary = False
+        assert fingerprints == [sys.argv[2]], 'Unexpected Docker signing key; review before installing packages'
+      - "{{ homelab_docker_repository_plan.key_path }}"
+      - "{{ homelab_docker_key_fingerprint }}"
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode or homelab_docker_repository_plan.existing
+
+- name: Add Docker source only after verifying its signing key
+  ansible.builtin.template:
+    src: docker.sources.j2
+    dest: "{{ homelab_docker_repository_plan.source_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  when: not homelab_docker_repository_plan.existing and not ansible_check_mode
+  register: homelab_docker_source_created
+
+- name: Preview missing repository setup without downloading keys or changing apt metadata
+  ansible.builtin.debug:
+    msg: A live prerequisite run will verify Docker's signing key, create its repository, refresh metadata and install missing packages. Installed versions will be preserved.
+  changed_when: true
+  when: ansible_check_mode and not homelab_docker_repository_plan.existing

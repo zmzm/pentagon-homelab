@@ -1,0 +1,10 @@
+---
+- ansible.builtin.import_playbook: site.yml
+- name: Manage tunnel routing with restored tunnel credentials
+  hosts: homelab
+  gather_facts: false
+  become: true
+  vars:
+    homelab_configuration_service: cloudflared
+  roles: [service_configuration]
+- ansible.builtin.import_playbook: cloudflared.yml

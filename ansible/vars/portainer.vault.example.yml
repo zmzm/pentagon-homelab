@@ -1,0 +1,4 @@
+---
+# Copy the EXISTING key from apps/portainer/.env locally, then encrypt the file.
+# Never commit a plaintext copy or pass a real key as a command-line argument.
+vault_portainer_homepage_widget_key: REPLACE_WITH_EXISTING_KEY

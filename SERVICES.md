@@ -118,4 +118,4 @@ Existing ignored local env files:
 - Backup repositories are stored under `backups/`.
 - Local service domains are routed through Caddy; public Matrix access uses Cloudflare Tunnel.
 
-Homepage deployment is managed through `ansible/homepage.yml`, including container health and HTTPS dashboard verification. See [Ansible deployment](ansible/README.md#homepage-deployment).
+All eleven Compose projects have Ansible deployment playbooks, including service-specific recovery prerequisites and post-deployment checks. Monitoring and database backup timers are managed by `ansible/scheduled-jobs.yml`. See [Ansible deployment and recovery](ansible/README.md).

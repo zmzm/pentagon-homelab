@@ -180,7 +180,7 @@ curl -fsS https://matrix.pentagonlab.org/_matrix/client/versions
 docker logs --tail 100 cloudflared
 ```
 
-The local health endpoint returned `OK` after the 2026-10-11 cleanup. The public versions endpoint returned HTTP 403 during the earlier check; public client access has not been verified by that local health check. If this persists, inspect the Cloudflare response and access rules alongside the tunnel logs.
+The earlier public check returned HTTP 403 on 2026-10-11. On 2026-10-19, Matrix deployment verified both local health and public client versions over trusted HTTPS; tunnel deployment also verified connector readiness and both existing public routes. Current public access is verified separately from local health. If a public failure recurs, inspect Cloudflare access rules and the connector alongside the origin. Deploy the restored connector with `ansible-playbook cloudflared.yml` from `ansible/`; see [tunnel recovery and checks](ansible/README.md#cloudflare-tunnel-deployment).
 
 ## Calling status
 
@@ -201,6 +201,43 @@ sudo python3 -B scripts/verify-backup.py --matrix-db
 ```
 
 It restores the latest `pentagon-backup` snapshot into private temporary storage, verifies file contents, checks required recovery files and Vaultwarden SQLite integrity, and restores the saved Matrix dump into a temporary network-isolated PostgreSQL container. It removes the test container and temporary files afterwards. It never restores into production. This verifies database recovery but does not prove a complete Synapse application rebuild or external backup availability.
+
+To also start Synapse from the restored configuration, signing key, media and database:
+
+```bash
+sudo python3 -B scripts/verify-backup.py --matrix-app
+```
+
+This option requires the host's `python3-yaml` package and installed Matrix images. It verifies the saved Compose environment matches the restored database password, initializes a fresh database from the logical dump, and starts the installed Synapse image against it. Only disposable configuration is adjusted for a loopback database connection, disabled statistics reporting and temporary console logging. The original server identity and signing key are retained. The database has no network; Synapse shares that container's loopback-only namespace, with no published ports or production mounts. Local health, client versions and server-key responses are checked, including a match to the restored signing key. Containers and restored files are removed afterwards. PostgreSQL is limited to 768 MiB memory/512 MiB database tmpfs; Synapse to 1536 MiB memory; both to one CPU. Review these limits as data grows.
+
+The application test passed on 2026-10-19 using snapshot `1aac183d`; see [the Synapse rebuild report](reports/2026-10-19-synapse-rebuild.md). This proves isolated startup from that backup with installed images. It does not test replacement-host provisioning, authenticated client login/messaging, federation, media delivery or an external backup destination.
+
+## Expanded application recovery checks
+
+```bash
+sudo python3 -B scripts/verify-backup.py --matrix-workflows --vaultwarden-app
+```
+
+These options also start recovered Vaultwarden and exercise disposable-account login, encrypted item write/read/sync, Matrix local messaging and authenticated media upload/download. Synthetic writes require an explicit test flag and loopback-only interfaces; all containers have no outside network or published ports. Only private restored copies are changed, then removed. Real user passwords are not needed, and existing encrypted user content is not decrypted. The expanded workflow passed directly and through the installed weekly service on 2026-10-21; see [the report](reports/2026-10-21-action-batch.md).
+
+## Scheduled recovery verification
+
+`homelab-recovery.timer` runs `--matrix-workflows --vaultwarden-app` verification every Sunday between 04:30 and 05:00 Europe/Warsaw, with catch-up after downtime. Install it with `ansible/scheduled-jobs.yml` after restoring the local repository and deploying Matrix. It uses the latest snapshot available when it runs; it does not create a fresh backup or access the deferred USB destination.
+
+The wrapper `scripts/recovery_test.py` prevents overlapping scheduled runs and publishes an atomic result in `/var/lib/homelab-recovery/status.json`. The directory is root-only 0700 and results/logs are 0600. `latest.log` retains only the latest run. Successful routine runs send no chat message. Existing five-minute monitoring reports failure, a run lasting over 35 minutes, or no successful verification in eight days. Failed/interrupted runs retain the previous success time without being reported as successful.
+
+The service allows 30 minutes, then requests interruption so recovery cleanup can run, with three further minutes before forced termination. It uses the shared `/tmp` namespace because the Docker daemon must see restored bind-mount paths; temporary restored directories are private. Host paths are read-only except temporary storage, private result state and the repository's lock directory. Abrupt power loss/forced termination can bypass cleanup: inspect and remove only identified `matrix-restore-test-*` / `synapse-restore-test-*` resources and their temporary restore paths after confirming no verifier is running. Monitoring detects an unfinished result as stuck.
+
+```bash
+systemctl list-timers homelab-recovery.timer
+sudo systemctl start homelab-recovery.service
+sudo cat /var/lib/homelab-recovery/status.json
+sudo journalctl -u homelab-recovery.service -n 10 --no-pager
+# Detailed output is private and may reference recovered files:
+sudo less /var/lib/homelab-recovery/latest.log
+```
+
+Read-only health checks now include recovery verification, bringing the total to 18. Independent outage monitoring is a separate task: [external monitoring setup](monitoring/EXTERNAL_MONITORING.md).
 
 See [the 2026-10-11 recovery report](reports/2026-10-11-backup-recovery.md) for integrity-check results and remaining work. Keep the repository password in a secure location outside this server so recovery does not depend on its local Backrest configuration.
 
@@ -232,6 +269,8 @@ The isolated verifier reuses the running PostgreSQL image, creates a separate co
 For a real rebuild, restore the dump together with the corresponding Synapse configuration, signing key, media store, and Matrix `.env`. Compose recreates the `synapse` database role from the saved environment. The dump contains the single Synapse database, not cluster-wide roles/tablespaces; current Synapse uses its Compose-provisioned role and `plpgsql` only. Before a production restore, stop Synapse writes, prepare an empty database on a compatible PostgreSQL version, and review the target carefully. The supplied scripts intentionally perform test restores only.
 
 To install the dump timer after rebuilding:
+
+Prefer `ansible-playbook scheduled-jobs.yml` from `ansible/` after restoring runtime prerequisites and starting Matrix. This also installs monitoring and the status listener; see [Ansible scheduled jobs](ansible/README.md#monitoring-and-database-backup-jobs). For manual installation:
 
 ```bash
 sudo install -d -m 0700 data/matrix/database-backup
