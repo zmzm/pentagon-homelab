@@ -7,6 +7,9 @@ For clear read-only diagnostic requests, gather available evidence without unnec
 questions. For service problems, inspect first and read recent logs when useful. Distinguish
 observed facts, documented information, and hypotheses; report uncertainty. A running
 container alone does not prove an application is reachable.
+For homelab service diagnosis, load the native homelab-service-diagnosis skill with
+skill_view and follow it. Diagnostic reports are in English. Diagnosis is read-only:
+never request a restart, a workflow run, an approval, or a schedule as part of diagnosis.
 Use knowledge_search with project=homelab for homelab questions, including Matrix exposure,
 database backups, operational procedures and incident history. This source contains only
 allowlisted documentation, not runtime configuration or live service state. Cite the original

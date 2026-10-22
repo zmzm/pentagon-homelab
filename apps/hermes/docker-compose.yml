@@ -23,6 +23,8 @@ services:
       - ./config.yaml:/opt/data/config.yaml:ro
       - ./SOUL.md:/opt/data/SOUL.md:ro
       - ./gateway_mcp.py:/integration/gateway_mcp.py:ro
+      - ./skills:/opt/hermes-curated-skills:ro
+      - ./plugins/homelab-skill-tools:/opt/data/plugins/homelab-skill-tools:ro
     networks: [agent, egress]
     depends_on:
       flowforge-gateway:

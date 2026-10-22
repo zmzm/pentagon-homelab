@@ -12,13 +12,23 @@ agent:
     - code_execution
     - delegation
     - browser
-    - skills
     - messaging
     - debugging
 platform_toolsets:
-  cli: [memory, session_search, clarify, cronjob, mcp-personal]
-  matrix: [memory, session_search, clarify, cronjob, mcp-personal]
-  cron: [memory, session_search, mcp-personal]
+  cli: [memory, session_search, clarify, cronjob, mcp-personal, homelab-skills-read]
+  matrix: [memory, session_search, clarify, cronjob, mcp-personal, homelab-skills-read]
+  cron: [memory, session_search, mcp-personal, homelab-skills-read]
+# Native group "skills" also exposes skill_manage. This local plugin defines
+# a narrower group using the installed runtime's existing native read tools.
+plugins:
+  enabled: [homelab-skill-tools]
+skills:
+  external_dirs: [/opt/hermes-curated-skills]
+  inline_shell: false
+security:
+  allow_lazy_installs: false
+curator:
+  enabled: false
 group_sessions_per_user: true
 tool_loop_guardrails:
   non_interactive_hard_stop_enabled: true

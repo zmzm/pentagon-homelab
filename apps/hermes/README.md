@@ -40,7 +40,8 @@ FlowForge credential is in that listener. Hermes receives only GLM, Matrix and g
 credentials. It has no host checkout/home, SSH key, Docker socket or unrestricted shell.
 Native file, terminal, code execution, browser, delegation and debugging tools are disabled;
 Matrix/CLI/cron selections explicitly choose the personal MCP tools and selected native
-memory/scheduling tools. Verify effective selections when upgrading Hermes.
+memory/scheduling tools plus native skill discovery/loading. Verify effective selections
+when upgrading Hermes.
 
 Only the broker mounts Docker's socket. A `:ro` socket mount **does not prevent Docker API
 writes**: the authenticated narrow handler and network isolation are the protection. This
@@ -86,6 +87,128 @@ MCP SDK 2.x uses `MCPServer`; the bridge also supports v1's `FastMCP`. Hermes fi
 child-process environment: `mcp_servers.personal.env` explicitly forwards only the gateway
 token and URL using native interpolation. A direct bridge test alone misses this boundary.
 Core configuration, identity and bridge files are read-only mounts.
+
+## Curated native skills
+
+The installed image was inspected on 2026-10-22: **Hermes v0.22.3 (2026.9.24),
+upstream `5b147ab0`**, image ID
+`sha256:2f305c9bdc81731f48664586d23cb6a6f838a15ad7be1bfabe0c3c269d8e09b9`.
+The source inside that image, rather than a newer upstream configuration example,
+defines this integration:
+
+| Installed source | Behavior used here |
+| --- | --- |
+| `agent/skill_utils.py:get_external_skills_dirs/get_skill_search_roots` | Reads `skills.external_dirs`; trusted project, local, create-dir, then external precedence; name collisions can shadow an external skill |
+| `tools/skills_tool.py:skills_list/skill_view/check_skills_requirements` | Native metadata discovery and full loading; read tools are always available, with no terminal/file/browser/delegation requirement |
+| `agent/system_prompt.py:_skills_prompt`, `agent/prompt_builder.py:build_skills_system_prompt` | Native name/description index is presented when skill tools are offered; the model selects a skill with `skill_view` (or a user explicitly preloads it) |
+| `toolsets.py`, `model_tools.py`, `hermes_cli/tools_config.py` | Platform selection resolves groups, subtracts disabled groups, then filters actual tool schemas by availability |
+| `agent/oneshot_footprint.py` | Finite CLI queries hide `skill_manage`; interactive Matrix sessions do not, so a CLI-only check would miss it |
+| `agent/skill_preprocessing.py`, `pm/install.py` | Inline shell is optional and off; loading a skill with `deps` can otherwise attempt lazy installation |
+
+`skills/homelab-service-diagnosis/SKILL.md` is the single curated skill. Compose
+mounts `./skills` at `/opt/hermes-curated-skills:ro`; `skills.external_dirs` adds
+it to native discovery. It does **not** replace `/opt/data/skills` or change the
+existing writable `/opt/data` memory/state mount. The skill has no scripts,
+package dependencies, secret requirements or execution requirements.
+
+The installed `skills` group also includes **`skill_manage`**, an authoring tool
+unneeded for this task. This version has no config-only per-native-tool filter.
+The small, read-only mounted `plugins/homelab-skill-tools` defines
+`homelab-skills-read` through the installed `toolsets.create_custom_toolset` API,
+containing exactly `skills_list` and `skill_view`. It adds no handlers, tool
+overrides, shell hooks or model execution capability. This helper uses a
+version-specific core import rather than a stable `PluginContext` method;
+revalidate it against the installed source on upgrades. If it fails to load,
+the custom group does not resolve; do not fall back to enabling all skills.
+
+CLI, Matrix and cron select that narrow group. Existing memory/scheduling/MCP
+selections remain. `skills.inline_shell:false` prevents shell expansion during
+loads, `security.allow_lazy_installs:false` prevents automatic acquisition of
+skill dependencies, and `curator.enabled:false` prevents background skill
+maintenance. Neither terminal, general files, code execution, browser nor
+delegation is enabled. Native reads can update Hermes' own skill usage/cache
+metadata under writable state; this does not grant the model file-writing tools.
+The existing MCP write tools remain available for separately requested actions;
+the skill and SOUL explicitly prohibit invoking them or creating approval
+requests during diagnosis. This is a procedural boundary, not a new gateway
+permission class or a hard per-request removal of write tools.
+
+The procedure clarifies ambiguous services, inspects state, reads a bounded log
+tail when useful, and searches `project="homelab"`. Its English report separates
+live observations, original documentation references and explicitly labelled
+hypotheses, then suggests an action and states verification limits.
+
+### Skills validation and rollout
+
+Run the offline installed-image checks from the repository root:
+
+```bash
+python3 scripts/verify_hermes_skills.py
+```
+
+This uses the live container's exact image ID with networking **disabled**, fake
+gateway credentials, a disposable tmpfs Hermes home and a copy of only the
+existing skills. It mounts the proposed configuration/curated skill/helper,
+registers all eight existing MCP schemas through Hermes' native subprocess
+environment, checks effective CLI/Matrix/cron schemas (including prohibited
+tools and absence of `skill_manage`), and verifies the native prompt index,
+`skills_list` and `skill_view` resolve the expected mounted skill and exact bytes.
+It compares production container IDs/start times and skill/memory file hashes
+before/after, then removes the test container. No Matrix adapter is started.
+
+Live behavioral acceptance is a separate, explicitly approved external-data
+egress step:
+
+```bash
+python3 scripts/verify_hermes_skills.py --live
+```
+
+It forwards only the existing GLM/gateway credentials, keeps Matrix credentials
+absent, and asks two fresh CLI sessions to diagnose Vaultwarden and clarify an
+ambiguous Matrix target. It retains all existing tool schemas. A validation-only
+copy of the MCP bridge blocks any HTTP call other than diagnostic service reads
+and `project="homelab"` retrieval before reaching the real gateway; any blocked
+attempt fails acceptance. Native `skill_view` selection, inspect/log/search
+calls, bounded log requests and absence of write-tool calls are checked from
+the isolated session database. Inspect the saved English answer and tool
+results manually: ensure state claims match runtime evidence, documentation is
+cited by original `source.reference`/`source.kind`, hypotheses are labelled, and
+unverified reachability/backup success is not asserted. Source/answer separation
+is semantic review, not a keyword-only assertion. Successful native loading by
+itself does not prove model selection or answer quality.
+
+Private evidence is stored in Git-ignored
+`reports/hermes-skills-static-evidence.json` / `reports/hermes-skills-evidence.json`.
+The offline command covers configuration selection for CLI, Matrix and cron;
+`--live` covers CLI behavior only. Neither proves end-to-end Matrix behavior.
+After approved deployment, repeat an authorized diagnostic request in Matrix
+and inspect the native session/tool trace and gateway audit for no writes or
+approval creation. Do not use a real restart as a diagnostic test.
+
+Rollout still requires operator deployment; **no production restart is part of
+this change**. From `apps/hermes`, after validation/review:
+
+```bash
+docker compose config --quiet
+docker compose up -d --no-deps --force-recreate hermes
+docker compose exec -T hermes python - < ../../scripts/verify_hermes_tool_registration.py
+```
+
+Recreation adds the two mounts and loads the plugin/configuration/SOUL. The
+existing runtime skills and writable memory remain mounted. Do not recreate
+the gateway, broker, Matrix services or other applications for this skill.
+Because this README is in the homelab documentation allowlist, refresh/check
+the homelab knowledge projection with the documented host commands when
+publishing the updated documentation. Projection refresh needs no restart.
+
+2026-10-22 acceptance: offline native discovery/index/loading and all three
+platform schema checks **passed**, as did Compose validation, skill validation,
+and Python compilation. Production container IDs/start times and skill/memory
+hashes were unchanged. No production service was restarted. Live model-driven
+CLI selection, evidence/documentation separation in a generated answer, and
+end-to-end Matrix behavior are **not yet validated**. Automatic approval review
+blocked the live test because it would send homelab diagnostics/logs to the
+external GLM provider; explicit approval for that data egress is still needed.
 
 To change the scheduled-delivery room, edit `MATRIX_HOME_ROOM` and run
 `docker compose up -d --no-deps hermes matrix-approvals`. `/sethome` tries to save the
