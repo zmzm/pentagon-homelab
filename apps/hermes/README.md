@@ -201,14 +201,42 @@ Because this README is in the homelab documentation allowlist, refresh/check
 the homelab knowledge projection with the documented host commands when
 publishing the updated documentation. Projection refresh needs no restart.
 
-2026-10-22 acceptance: offline native discovery/index/loading and all three
-platform schema checks **passed**, as did Compose validation, skill validation,
-and Python compilation. Production container IDs/start times and skill/memory
-hashes were unchanged. No production service was restarted. Live model-driven
-CLI selection, evidence/documentation separation in a generated answer, and
-end-to-end Matrix behavior are **not yet validated**. Automatic approval review
-blocked the live test because it would send homelab diagnostics/logs to the
-external GLM provider; explicit approval for that data egress is still needed.
+2026-10-22 latest acceptance: native discovery/index/loading and all three
+platform schema checks **passed**, followed by a successful fresh live CLI run
+using the configured GLM provider and the unchanged diagnostic prompts.
+Vaultwarden loaded the skill, inspected current state, read 100 log lines and
+searched `project="homelab"`. Manual review confirmed English reporting with
+separate runtime observations, original documentation citations, explicitly
+labelled hypotheses and verification limits. The wording no longer asserts
+continuous historical health or speculates about user motivation.
+
+The ambiguous Matrix case loaded the skill and called `clarify`. Its result was
+unanswered/undelivered with no user response; the model then ended with an
+English question asking which target to diagnose. It made **no personal MCP
+calls** for that case. Across both cases there were three allowed gateway reads,
+zero write/approval attempts and zero guard blocks. Production container IDs/
+start times and skill/memory hashes were unchanged. No deployment or production
+restart occurred. Coverage is **CLI-only**; Matrix messaging has not been
+behaviorally validated.
+
+This fixes an earlier live failure in which the model followed the native
+one-shot clarification fallback and inspected guessed targets. The skill and
+SOUL now require an actual user choice and explicitly stop on failed,
+unavailable or unanswered clarification, even if a tool notice suggests making
+an assumption. The same failed trace remains rejected by the checker; the
+previous evidence/report is retained locally under
+`reports/hermes-skills-before-clarification-fix-*`.
+
+The harness was corrected to give its tmpfs home private UID/GID 10000 ownership,
+read that home as the same unprivileged observer, retain failed CLI output
+privately, and validate underlying calls inside native `tool_call` batches.
+Six regression tests cover direct/deferred calls, nested writes, unanswered
+clarification, missing final questions and blocked HTTP attempts. The latest
+live command exited successfully with complete native observations and both
+final answers in private evidence; no trace recovery was needed. See
+`reports/hermes-skills-acceptance.md` locally. This is one observed passing run,
+not a guarantee of all future model behavior; deployment and end-to-end Matrix
+acceptance remain separate steps.
 
 To change the scheduled-delivery room, edit `MATRIX_HOME_ROOM` and run
 `docker compose up -d --no-deps hermes matrix-approvals`. `/sethome` tries to save the

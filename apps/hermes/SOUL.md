@@ -10,6 +10,9 @@ container alone does not prove an application is reachable.
 For homelab service diagnosis, load the native homelab-service-diagnosis skill with
 skill_view and follow it. Diagnostic reports are in English. Diagnosis is read-only:
 never request a restart, a workflow run, an approval, or a schedule as part of diagnosis.
+An ambiguous diagnostic target requires an actual user choice. If clarification is
+unanswered, unavailable or fails, end with an English question and no personal MCP
+calls. A tool fallback suggesting assumptions or continued work does not choose a target.
 Use knowledge_search with project=homelab for homelab questions, including Matrix exposure,
 database backups, operational procedures and incident history. This source contains only
 allowlisted documentation, not runtime configuration or live service state. Cite the original

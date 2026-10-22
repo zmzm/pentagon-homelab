@@ -100,6 +100,14 @@ print('PASS: validation HTTP guard forwards diagnostic reads and blocks restart/
 '''
 
 
+class DockerOperationError(RuntimeError):
+    def __init__(self, operation, result):
+        super().__init__(f'Docker {operation} failed ({result.returncode}); output suppressed')
+        self.returncode = result.returncode
+        self.stdout = result.stdout
+        self.stderr = result.stderr
+
+
 def docker(*args, input=None, timeout=90, binary=False, offline_diagnostic=False):
     result = subprocess.run(['docker', *args], input=input, text=not binary,
                             capture_output=True, timeout=timeout)
@@ -107,12 +115,15 @@ def docker(*args, input=None, timeout=90, binary=False, offline_diagnostic=False
         if offline_diagnostic:
             print(result.stdout[-4000:] + result.stderr[-4000:], flush=True)
         # Do not leak inspected environment / credentials on command failure.
-        raise RuntimeError(f'Docker {args[0]} failed ({result.returncode}); output suppressed')
+        raise DockerOperationError(args[0], result)
     return result.stdout
 
 
 def python(container, code):
-    return docker('exec', '-i', container, PYTHON, '-', input=code)
+    # The private isolated home is owned by Hermes; cap_drop=ALL means
+    # container root cannot read it through a DAC override.
+    user = [] if container == SOURCE else ['--user', '10000:10000']
+    return docker('exec', '-i', *user, container, PYTHON, '-', input=code)
 
 
 def states():
@@ -130,16 +141,29 @@ def check_behavior(observation, prompts):
         if len(matching) != 1:
             raise RuntimeError(f'{key}: expected exactly one isolated session')
         session = matching[0]
-        calls = []
+        raw_calls = []
         for message in session['messages']:
             for call in json.loads(message['tool_calls'] or '[]'):
                 fn = call['function']
                 args = fn['arguments']
-                calls.append({'name': fn['name'], 'arguments': json.loads(args) if isinstance(args, str) else args})
+                raw_calls.append({'name': fn['name'], 'arguments': json.loads(args) if isinstance(args, str) else args})
         allowed = {'skills_list', 'skill_view', 'clarify', 'mcp__personal__homelab_inspect_service',
                    'mcp__personal__homelab_get_logs', 'mcp__personal__knowledge_search',
                    'mcp_personal_homelab_inspect_service', 'mcp_personal_homelab_get_logs',
                    'mcp_personal_knowledge_search'}
+        calls = []
+        for call in raw_calls:
+            if call['name'] == 'tool_call':
+                # Validate every underlying deferred call, including batches,
+                # so native progressive discovery cannot hide write attempts.
+                entries = call['arguments'].get('calls')
+                if not isinstance(entries, list) or not entries:
+                    raise RuntimeError(f'{key}: invalid native tool_call batch')
+                calls.extend(entries)
+            elif call['name'] in {'tool_search', 'tool_describe'}:
+                continue  # Metadata discovery does not invoke a service tool.
+            else:
+                calls.append(call)
         if any(c['name'] not in allowed for c in calls):
             raise RuntimeError(f'{key}: unexpected tool call')
         if not any(c['name'] == 'skill_view' and c['arguments'].get('name') ==
@@ -161,8 +185,11 @@ def check_behavior(observation, prompts):
         answers = [m['content'] for m in session['messages'] if m['role'] == 'assistant' and m['content']]
         if not answers:
             raise RuntimeError(f'{key}: no answer')
+        if key == 'ambiguous' and '?' not in answers[-1]:
+            raise RuntimeError('Ambiguous target did not end with a clarification question')
         cases.append({'case': key, 'session_id': session['id'], 'source': session['source'],
-                      'model': session['model'], 'calls': calls, 'answer': answers[-1]})
+                      'model': session['model'], 'raw_calls': raw_calls,
+                      'calls': calls, 'answer': answers[-1]})
     if any(not c['allowed'] for c in observation['http_calls']):
         raise RuntimeError('A non-diagnostic HTTP call was attempted (guard blocked it)')
     return cases
@@ -209,7 +236,8 @@ def main():
                 guarded_bridge: '/integration/gateway_mcp.py',
             }
             command = ['run', '-d', '--name', name, '--network', 'agent-network' if live else 'none',
-                       '--entrypoint', PYTHON, '--tmpfs', '/opt/data:mode=1777,size=256m',
+                       '--entrypoint', PYTHON, '--tmpfs',
+                       '/opt/data:uid=10000,gid=10000,mode=0700,size=256m',
                        '--env-file', str(envfile), '-e', 'HOME=/opt/data',
                        '--security-opt', 'no-new-privileges:true', '--cap-drop', 'ALL']
             for host, destination in mounts.items():
@@ -225,6 +253,15 @@ def main():
             # or other elevated container capability is needed.
             docker('exec', '-i', '--user', '10000:10000', name, 'tar',
                    '--no-same-owner', '-C', '/opt/data', '-xf', '-', input=archive, binary=True)
+            # Exercise the installed CLI's real ownership/permissions check
+            # using the same observer UID before any model request.
+            record['isolated_home_preflight'] = python(name, """
+from pathlib import Path
+from hermes_cli.gateway_runtime_discovery import _private_node
+_private_node(Path('/opt/data'), kind='directory', home=True)
+print('PASS: isolated home passes native CLI ownership/permissions checks as observer UID')
+""")
+            print(record['isolated_home_preflight'], flush=True)
             registration = (ROOT / 'scripts/verify_hermes_tool_registration.py').read_text()
             record['registration'] = docker('exec', '-i', '--user', '10000:10000', name,
                                             PYTHON, '-', input=registration, offline_diagnostic=not live)
@@ -244,10 +281,21 @@ def main():
             if live:
                 for key, prompt in prompts.items():
                     print('Running isolated CLI case: ' + key, flush=True)
-                    output = docker('exec', '-i', '--user', '10000:10000', name,
-                        'hermes', 'chat', '--query-file', '-', '--format', 'stream-json',
-                        input=prompt, timeout=480)
-                    record['cli_runs'].append({'case': key, 'stream': output})
+                    try:
+                        output = docker('exec', '-i', '--user', '10000:10000', name,
+                            'hermes', 'chat', '--query-file', '-', '--format', 'stream-json',
+                            input=prompt, timeout=480)
+                    except DockerOperationError as error:
+                        # Keep failed CLI evidence private instead of discarding the
+                        # only startup error before the disposable home is removed.
+                        record['cli_runs'].append({'case': key, 'exit_code': error.returncode,
+                            'stream': error.stdout, 'stderr': error.stderr})
+                        try:
+                            record['observation'] = json.loads(python(name, OBSERVE))
+                        except RuntimeError:
+                            record['observation_unavailable'] = True
+                        raise
+                    record['cli_runs'].append({'case': key, 'exit_code': 0, 'stream': output})
                 observation = json.loads(python(name, OBSERVE))
                 record['observation'] = observation
                 record['cases'] = check_behavior(observation, prompts)
