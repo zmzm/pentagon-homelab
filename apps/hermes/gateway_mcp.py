@@ -56,9 +56,12 @@ def call(path: str, session_id: str, user_request: str, payload=None, approval_i
 @mcp.tool()
 def knowledge_search(query: str, session_id: str, user_request: str,
                      project: str = "mentory", scope: list[str] | None = None, limit: int = 5):
-    """Search Mentory completed-task records/history (project=mentory) or coding guidance
-    (project=default) through Knowledge Router. Cite result.source.reference for project
+    """Search homelab operational docs/incidents (project=homelab), Mentory completed-task
+    records/history (project=mentory), or coding guidance (project=default) through Knowledge
+    Router. For homelab questions always select project=homelab. Cite result.source.reference for project
     evidence, preserve source.kind, and distinguish planning from execution/decision records.
+    Homelab historical-incident results describe history, never proof of current state.
+    Check sourceSnapshot freshness/version; stale snapshots need an operator refresh.
     Results are dated snapshots; no match is not evidence that no decision exists.
     """
     args: dict[str, Any] = {"query": query, "project": project, "limit": limit}

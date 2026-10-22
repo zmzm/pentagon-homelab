@@ -9,5 +9,5 @@
     "backrest": {"container": "backrest", "restart": "CONFIRM"}
   },
   "workflows": {"task-analysis": {"permission": "CONFIRM"}},
-  "projects": {"mentory": "/vaults/mentory", "default": "/vaults/coding"}
+  "projects": {"mentory": "/vaults/mentory", "default": "/vaults/coding", "homelab": "/vaults/homelab"}
 }

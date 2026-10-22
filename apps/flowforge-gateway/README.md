@@ -14,7 +14,11 @@ npm test
 audit and metrics. `src/operations.mjs` delegates knowledge to the existing CLI and workflows
 to a configured upstream API. `src/project-vault.mjs` adapts completed Mentory records
 to the existing router format and maps citations back to original sources; it does not rank
-or search documents. Refresh with `scripts/build_mentory_knowledge.mjs` from the repo root. `src/broker.mjs` is the only component with a Docker socket;
+or search documents. `src/homelab-vault.mjs` projects only allowlisted homelab operational
+docs and separately labelled historical incidents using the same snapshot/citation support.
+Refresh from the repo root with `scripts/build_mentory_knowledge.mjs` or
+`scripts/build_homelab_knowledge.mjs`; the latter supports a read-only `--check` for freshness.
+See the Hermes guide for commands and snapshot metadata. `src/broker.mjs` is the only component with a Docker socket;
 it supports allowlisted inspect/log/restart operations only.
 
 Start with `policy.example.json`, an empty workflow allowlist, and explicit service policies.

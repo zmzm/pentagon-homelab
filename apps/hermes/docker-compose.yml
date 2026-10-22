@@ -52,6 +52,7 @@ services:
       - ${KNOWLEDGE_ROUTER_PATH:-../../../apps/knowledge-router}:/knowledge-router:ro
       - ${CODING_VAULT_PATH:-../../../apps/obsidian-vaults/coding}:/vaults/coding:ro
       - ../../data/knowledge-mentory:/vaults/mentory:ro
+      - ../../data/knowledge-homelab:/vaults/homelab:ro
     # No published ports. Operator approval uses docker compose exec, documented below.
     networks: [agent, operations, upstream]
     healthcheck:

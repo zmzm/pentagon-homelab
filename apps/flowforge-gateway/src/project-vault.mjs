@@ -61,6 +61,14 @@ export async function buildProjectVault({project, queue, destination}) {
     return [path, {...entry, content: header + entry.content, lineOffset: header.split('\n').length - 1}];
   });
   const snapshotId = hash(JSON.stringify({version: 1, project, documents: prepared}));
+  await publishProjectVault(destination, prepared, {version: 1, project: 'mentory', sourceRoot: project, snapshotId,
+    generatedAt: new Date().toISOString()});
+  return {snapshotId, documents: prepared.length, completedTasks: ids.size, sourceBytes: bytes};
+}
+
+// Shared immutable snapshot publication; callers define source selection and metadata.
+export async function publishProjectVault(destination, prepared, metadata) {
+  const {snapshotId} = metadata;
   const snapshot = resolve(destination, 'snapshots', snapshotId);
   await mkdir(resolve(destination, 'snapshots'), {recursive: true, mode: 0o700});
   const stage = resolve(destination, 'snapshots', `.build-${randomUUID()}`);
@@ -74,8 +82,7 @@ export async function buildProjectVault({project, queue, destination}) {
       const {content: _content, ...metadata} = entry;
       documents[path] = metadata;
     }
-    const manifest = {version: 1, project: 'mentory', sourceRoot: project, snapshotId,
-      generatedAt: new Date().toISOString(), documents};
+    const manifest = {...metadata, documents};
     await writeFile(resolve(stage, 'manifest.json'), JSON.stringify(manifest), {mode: 0o600});
     try { await rename(stage, snapshot); }
     catch (error) {
@@ -83,25 +90,41 @@ export async function buildProjectVault({project, queue, destination}) {
       await rm(stage, {recursive: true});
     }
     const pointer = resolve(destination, `.current-${randomUUID()}.json`);
-    await writeFile(pointer, JSON.stringify({snapshotId}), {mode: 0o600});
+    await writeFile(pointer, JSON.stringify({snapshotId, ...(metadata.project === 'homelab'
+      ? {refreshedAt: new Date().toISOString()} : {})}), {mode: 0o600});
     await rename(pointer, resolve(destination, 'current.json'));
-    return {snapshotId, documents: prepared.length, completedTasks: ids.size, sourceBytes: bytes};
   } catch (error) { await rm(stage, {recursive: true, force: true}); throw error; }
 }
 
-export async function openProjectVault(root) {
+export async function openProjectVault(root, project = 'mentory') {
   const pointer = JSON.parse(await readFile(resolve(root, 'current.json'), 'utf8'));
   check(typeof pointer.snapshotId === 'string' && /^[a-f0-9]{64}$/.test(pointer.snapshotId), 'INVALID_KNOWLEDGE_SNAPSHOT');
   const snapshot = resolve(root, 'snapshots', pointer.snapshotId);
   check(await realpath(snapshot) === snapshot, 'INVALID_KNOWLEDGE_SNAPSHOT');
   const manifest = JSON.parse(await readFile(resolve(snapshot, 'manifest.json'), 'utf8'));
-  check(manifest.version === 1 && manifest.project === 'mentory' && manifest.snapshotId === pointer.snapshotId, 'INVALID_KNOWLEDGE_SNAPSHOT');
-  return {vault: resolve(snapshot, 'vault'), manifest};
+  check(manifest.version === 1 && manifest.project === project && manifest.snapshotId === pointer.snapshotId, 'INVALID_KNOWLEDGE_SNAPSHOT');
+  if (project === 'homelab') {
+    check(Number.isFinite(Date.parse(pointer.refreshedAt)) && Number.isFinite(Date.parse(manifest.generatedAt)), 'INVALID_KNOWLEDGE_SNAPSHOT');
+    manifest.refreshedAt = pointer.refreshedAt;
+  }
+  const vault = resolve(snapshot, 'vault');
+  check(await realpath(vault) === vault && (await stat(vault)).isDirectory(), 'INVALID_KNOWLEDGE_SNAPSHOT');
+  return {vault, manifest};
+}
+
+export const HOMELAB_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+
+export function snapshotMetadata(manifest, now = Date.now()) {
+  const common = {project: manifest.project, id: manifest.snapshotId, generatedAt: manifest.generatedAt};
+  if (manifest.project === 'mentory') return {...common, completedTasksOnly: true};
+  const ageSeconds = Math.max(0, Math.floor((now - Date.parse(manifest.refreshedAt)) / 1000));
+  return {...common, version: manifest.version, ...manifest.sourceVersion, refreshedAt: manifest.refreshedAt,
+    ageSeconds, stale: ageSeconds > HOMELAB_MAX_AGE_SECONDS, maxAgeSeconds: HOMELAB_MAX_AGE_SECONDS,
+    sourceChanges: 'unknown', currentStateVerified: false};
 }
 
 export function citeProjectResults(response, manifest) {
-  return {...response, sourceSnapshot: {project: manifest.project, id: manifest.snapshotId,
-    generatedAt: manifest.generatedAt, completedTasksOnly: true}, results: response.results.map(result => {
+  return {...response, sourceSnapshot: snapshotMetadata(manifest), results: response.results.map(result => {
     const source = manifest.documents[result.path];
     check(source && !isAbsolute(source.path) && !source.path.split('/').includes('..'), 'INVALID_KNOWLEDGE_CITATION');
     const startLine = Math.max(1, result.startLine - source.lineOffset);
@@ -109,7 +132,7 @@ export function citeProjectResults(response, manifest) {
     let content = result.content;
     if (result.startLine === 1) content = content.split('\n').slice(source.lineOffset).join('\n');
     const {lineOffset: _lineOffset, ...citation} = source;
-    return {...result, content, source: {project: 'mentory', ...citation, startLine, endLine,
+    return {...result, content, source: {project: manifest.project, ...citation, startLine, endLine,
       reference: `${source.path}:${startLine}`}};
   })};
 }

@@ -56,8 +56,8 @@ export function executor(env, policy) {
       check(env.KNOWLEDGE_CLI, 'KNOWLEDGE_NOT_CONFIGURED', 503);
       const project = args.project || 'default';
       let vault = policy.projects[project], manifest;
-      if (project === 'mentory') {
-        try { ({vault, manifest} = await openProjectVault(vault)); }
+      if (['mentory', 'homelab'].includes(project)) {
+        try { ({vault, manifest} = await openProjectVault(vault, project)); }
         catch { check(false, 'KNOWLEDGE_PROJECT_NOT_READY', 503); }
       }
       const cache = `/state/knowledge-${project}${manifest ? '-' + manifest.snapshotId : ''}.json`;

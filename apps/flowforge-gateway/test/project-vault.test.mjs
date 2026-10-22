@@ -67,7 +67,7 @@ test('projection rejects source escapes, symlinked documents and tampered snapsh
 });
 
 test('actual existing Knowledge Router retrieves projected decisions with original line citations', async t => {
-  const cli = resolve('..','apps','knowledge-router','dist','cli.js');
+  const cli = process.env.KNOWLEDGE_CLI || resolve(import.meta.dirname,'../../../../apps/knowledge-router/dist/cli.js');
   try {await readFile(cli);} catch {return t.skip('Existing Knowledge Router checkout is not built');}
   const f = await fixture(t);
   await buildProjectVault({...f,destination:f.output});

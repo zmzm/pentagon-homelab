@@ -13,7 +13,7 @@ monitoring and existing application services remain independent.
 | Personal MCP tools | Hermes native registration and Matrix filtering tested; read-only Vaultwarden tool chain tested |
 | Permissions | READ/AUTO_SAFE/CONFIRM/DENY; exact-action, durable single-use approvals; no model approver credential |
 | Matrix approvals | Separate trusted listener posts exact actions and accepts commands or seeded reactions only from allowed Matrix users in the configured room; security tests pass |
-| Knowledge Router | Existing router searches coding guidance and a cited snapshot of completed Mentory task records/history; native knowledge → approved FlowForge → Matrix acceptance passed |
+| Knowledge Router | Existing router searches coding guidance, completed Mentory task records/history, and a separate allowlisted homelab documentation snapshot; homelab deployment/refresh is explicit |
 | FlowForge | Planning-only API around existing runner, task hashes and read-only source snapshot; real GLM run saved both plans in 633 seconds; all four sanitized result chunks verified in Matrix |
 | Scheduling | Live one-run health check survived restart, executed and delivered once to Matrix; job is now disabled |
 | Voice, structured entity memory | Deferred |
@@ -67,7 +67,8 @@ From `apps/hermes`, use the private `.env` based on `.env.example` (mode 600).
 - `FLOWFORGE_URL`: `http://flowforge-api:8082`.
 - `KNOWLEDGE_ROUTER_PATH`, `CODING_VAULT_PATH`, `FLOWFORGE_PATH`, `MENTORY_PROJECT_PATH`, `OPENCODE_BINARY`: existing source paths, documented in the example.
 
-Build the Mentory source projection using the refresh command in **Knowledge scope, audit and metrics** below.
+Build the Mentory and homelab source projections using the refresh commands in
+**Knowledge scope, audit and metrics** below before starting the gateway.
 Create `data/hermes`, `data/flowforge-gateway`, `data/matrix-approvals` and
 `data/flowforge-api`. The three custom-service state directories must be writable by
 UID/GID 1000 with mode 700. Build the existing Knowledge Router with its own `npm ci` and
@@ -193,6 +194,75 @@ record kinds and task status are returned under `result.source`. Cite `source.re
 execution records and explicit decision documents are labelled separately. No matches do
 not establish that no decision exists. There is no separate ADR archive configured.
 
+### Homelab documentation
+
+For homelab questions, call the existing `knowledge_search` with `project:"homelab"`.
+This separate projection reuses the same CLI, snapshot publication and citation mapping;
+it adds no retriever. Its explicit allowlist is:
+
+- `README.md`, `ARCHITECTURE.md`, `SERVICES.md`, `DOMAINS.md`, `OPERATIONS.md`,
+  `RECOVERY_CHECKLIST.md`, `monitoring/README.md`, `apps/hermes/README.md`
+- `incidents/*.md` (direct, non-hidden Markdown files only; no recursive traversal)
+
+All eight fixed documents are required; source errors abort the build before the current
+pointer changes. No linked documents are followed. Ansible guides, reports outside
+`incidents/`, other app docs, code, Compose files, runtime data, backups and credentials
+are excluded. The gateway mounts only `data/knowledge-homelab` at `/vaults/homelab:ro`,
+never the host homelab repository. Hermes accesses it only through the gateway.
+
+Operational documents have `source.kind:"operational-document"`; incident reports have
+`source.kind:"historical-incident"` and separate router skills. Historical references are
+never attached to the operational skill. Incidents document past events, including their
+then-current resolution/prevention advice; they do not establish current configuration or
+instructions. Even operational docs are recorded documentation, not a live state check.
+Use service inspection for current runtime evidence and report uncertainty when only
+history matches. Preserve the original `source.reference`, line range and document SHA-256.
+Projected paths/ranges remain in `result.path/startLine/endLine` for router compatibility.
+
+From the homelab root, as UID 1000 with Node 24+, build/refresh after documentation changes:
+
+```bash
+node scripts/build_homelab_knowledge.mjs --project "$PWD" --output "$PWD/data/knowledge-homelab"
+node scripts/build_homelab_knowledge.mjs --project "$PWD" --output "$PWD/data/knowledge-homelab" --check
+```
+
+The first command reads only allowlisted source contents and Git version/status metadata.
+It bounds documents at 128 KiB and snapshots at 16 MiB/2,000 documents, rejects symlinks,
+writes an immutable content-addressed snapshot, then atomically replaces `current.json`.
+It leaves original sources untouched. An unchanged refresh reuses the snapshot and renews
+the pointer's `refreshedAt` after re-reading the sources; `generatedAt` remains immutable.
+Old snapshots remain for audit, with no automatic retention or new watcher/timer.
+Each snapshot uses a distinct gateway cache, built by the existing router on first search.
+Refresh after a documentation commit to record that committed revision.
+
+The read-only `--check` exits 1 for missing/invalid snapshots, changed source/version or
+snapshots last refreshed over seven days ago; exits 0 when current. It detects incident
+additions/removals too. Search returns `sourceSnapshot` even on no matches, including ID,
+manifest version, repository, `gitCommit`, `documentationDirty`, generation/refresh times,
+age and `stale` (seven-day threshold). Unknown Git metadata is `null`, not a clean revision.
+Missing/broken snapshots return `KNOWLEDGE_PROJECT_NOT_READY`; there is no fallback source.
+Stale snapshots remain searchable with `stale:true` so the agent can identify the limitation.
+The gateway has no live source mount, so `sourceChanges:"unknown"` explicitly means it
+cannot detect edits since refresh. Run `--check` on the host for that comparison. A recent
+snapshot is not proof that service state matches documentation.
+
+For initial deployment after reviewing the change, build/check the projection and validate
+Compose, then build/recreate **only** the gateway and Hermes from `apps/hermes`:
+
+```bash
+docker compose config --quiet
+docker compose build flowforge-gateway
+docker compose up -d --no-deps --force-recreate flowforge-gateway hermes
+```
+
+This picks up the new read-only mount, policy, MCP description and SOUL instructions.
+Force recreation ensures Hermes reloads its bind-mounted instructions and MCP description
+even when its image and Compose service configuration are unchanged.
+Later documentation-only refreshes need no restart: each search reads the atomic pointer.
+Do not recreate other services or change production schedules for this integration.
+
+### Mentory refresh
+
 Refresh explicitly after relevant source changes, before deploying the gateway initially:
 
 ```bash
@@ -255,8 +325,15 @@ docker compose exec -T flowforge-api python3 - < ../../scripts/verify_flowforge_
 
 The first container check uses Hermes' actual launcher/environment filtering and Matrix
 tool selection; the second performs a real MCP handshake and read-only Vaultwarden call.
-The 22 gateway/approval tests use fake local backends; four additional project-projection
-tests cover source boundaries, refresh/citations, and the actual existing Knowledge Router CLI. The FlowForge integration test reuses the
+Gateway/approval tests use fake local backends. Projection tests cover source boundaries,
+refresh/citations, source selection and the actual existing Knowledge Router CLI. The homelab
+integration test asks about Matrix external exposure, database backups and the DNS loop
+incident against the real repository docs, checking original citation content and kinds.
+Set `KNOWLEDGE_CLI` to an alternate built CLI path if necessary; otherwise it uses the sibling
+`../apps/knowledge-router/dist/cli.js` checkout. If absent, CLI tests explicitly skip;
+fixture tests alone do not prove retrieval. This local CLI check does not prove deployed
+Hermes/MCP acceptance. After deployment, ask those questions via `knowledge_search` with
+`project:"homelab"` and verify source metadata. The FlowForge integration test reuses the
 actual existing runner with only the OpenCode process boundary mocked.
 
 Live acceptance reports are kept locally under `reports/hermes-*-acceptance.md` and excluded
