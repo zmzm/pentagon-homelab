@@ -23,7 +23,7 @@ test('only fresh explicit unedited commands from an allowed user in the approval
 });
 
 function fixture({encrypted = false, limited = false, status = 'PENDING'} = {}) {
-  const state = {since: 'initial', prompts: {}}; const sends = [], decisions = [], executions = [];
+  const state = {since: 'initial', prompts: {}}; const sends = [], decisions = [], executions = [], logs = [];
   let events = [];
   const record = {id, tool: 'homelab.restartService', arguments: {service: 'vaultwarden'}, context: {sessionId: 'original', userRequest: 'Restart Vaultwarden'}, expiresAt: now + 600000, status};
   const gateway = async (method, path, data) => {
@@ -38,8 +38,8 @@ function fixture({encrypted = false, limited = false, status = 'PENDING'} = {}) 
     if (method === 'GET') return encrypted ? [{type: 'm.room.encryption'}] : [];
     sends.push({path, data}); return {event_id: '$prompt'};
   };
-  const relay = new ApprovalRelay({room, users: [user], state, matrix, gateway, save: () => {}, now: () => now});
-  return {relay, state, sends, decisions, executions, record, events: value => {events = value;}};
+  const relay = new ApprovalRelay({room, users: [user], state, matrix, gateway, save: () => {}, now: () => now, log: entry => logs.push(entry)});
+  return {relay, state, sends, decisions, executions, logs, record, events: value => {events = value;}};
 }
 
 test('trusted prompt, verified event and exact stored execution form one approval lifecycle', async () => {
@@ -60,7 +60,8 @@ test('rejection never calls execution', async () => {
 test('history gaps, bot messages and encrypted rooms cannot approve actions', async () => {
   const gap = fixture({limited: true}); await gap.relay.tick(); gap.events([event]); await gap.relay.tick(); assert.equal(gap.executions.length, 0);
   const bot = fixture(); await bot.relay.tick(); bot.events([{...event, sender: '@bot:server'}]); await bot.relay.tick(); assert.equal(bot.executions.length, 0);
-  const encrypted = fixture({encrypted: true}); await assert.rejects(encrypted.relay.tick(), /ENCRYPTED_APPROVAL_ROOM/); assert.equal(encrypted.sends.length, 0);
+  const encrypted = fixture({encrypted: true}); await encrypted.relay.tick(); assert.equal(encrypted.sends.length, 0);
+  assert.equal(encrypted.logs[0].stage, 'prompt'); assert.equal(encrypted.executions.length, 0);
 });
 
 test('an ambiguous previous execution is reported rather than replayed after restart', async () => {
@@ -86,6 +87,119 @@ test('completed workflow plans are delivered once without another write executio
   });
   await relay.tick();assert.equal(sends.length,1);assert.ok(sends[0].includes('Existing grounded output'));
   await relay.tick();assert.equal(sends.length,1);
+});
+
+test('a failed workflow lookup does not block another workflow or approval and retries safely', async () => {
+  const workflowId = '22345678-1234-1234-1234-123456789abc';
+  const approvalId = '32345678-1234-1234-1234-123456789abc';
+  const state = {since: 'initial', prompts: {
+    [id]: {...prompts[id], finished: true, workflowPending: true},
+    [workflowId]: {...prompts[id], finished: true, workflowPending: true},
+    [approvalId]: {...prompts[id], decision: {approve: false}},
+  }};
+  const sends = [], logs = [], lookups = [];
+  let fail = true;
+  const relay = new ApprovalRelay({room, users: [user], state, save: () => {}, now: () => now, log: entry => logs.push(entry),
+    matrix: async (method, path, data) => {
+      if (path.startsWith('/sync?')) return {next_batch: 'next'};
+      if (method === 'GET') return [];
+      sends.push({path, data}); return {event_id: '$result'};
+    },
+    gateway: async (method, path) => {
+      assert.equal(method, 'GET');
+      if (path === '/approvals') return {requests: []};
+      if (path === `/approvals/${approvalId}`) return {status: 'REJECTED'};
+      lookups.push(path);
+      if (path === `/approvals/${id}/workflow` && fail) {
+        throw Object.assign(new Error('secret credential and full payload'), {code: 'secret credential'});
+      }
+      return {data: {status: 'DONE', task_id: 'task', run_id: path, outputs: {'plan.md': 'Completed plan'}}};
+    },
+  });
+  await relay.tick();
+  assert.equal(state.prompts[id].workflowPending, true);
+  assert.equal(state.prompts[workflowId].workflowPending, false);
+  assert.equal(state.prompts[approvalId].finished, true);
+  assert.equal(sends.length, 2);
+  assert.deepEqual(logs, [{timestamp: new Date(now).toISOString(), event: 'approval_relay_operation_failed',
+    code: 'APPROVAL_RELAY_OPERATION_FAILED', approvalId: id, stage: 'workflow_result'}]);
+  fail = false;
+  await relay.tick();
+  assert.equal(state.prompts[id].workflowPending, false);
+  assert.equal(sends.length, 3);
+  assert.equal(lookups.filter(path => path === `/approvals/${workflowId}/workflow`).length, 1);
+});
+
+test('a failed prompt send does not block other prompts and retries the same Matrix transaction', async () => {
+  const f = fixture(), otherId = '22345678-1234-1234-1234-123456789abc';
+  const gateway = f.relay.gateway, matrix = f.relay.matrix, attempts = [];
+  let fail = true;
+  f.relay.gateway = (method, path, data) => path === '/approvals'
+    ? {requests: [f.record, {...f.record, id: otherId}]} : gateway(method, path, data);
+  f.relay.matrix = async (method, path, data) => {
+    if (path.endsWith(`approval-${id}-prompt`)) {
+      attempts.push(path);
+      if (fail) throw new Error('ambiguous Matrix send');
+    }
+    return matrix(method, path, data);
+  };
+  await f.relay.tick();
+  assert.equal(f.state.prompts[id].eventId, undefined);
+  assert.equal(f.state.prompts[otherId].eventId, '$prompt');
+  assert.equal(f.logs[0].approvalId, id); assert.equal(f.logs[0].stage, 'prompt');
+  const sent = f.sends.length;
+  fail = false;
+  await f.relay.tick();
+  assert.equal(f.state.prompts[id].eventId, '$prompt');
+  assert.equal(f.sends.length, sent + 3);
+  assert.equal(attempts.length, 2); assert.equal(attempts[0], attempts[1]);
+});
+
+test('a failed approval lookup allows other results and remains eligible for execution', async () => {
+  const f = fixture(), otherId = '22345678-1234-1234-1234-123456789abc';
+  await f.relay.tick(); f.events([event]);
+  f.state.prompts[otherId] = {...prompts[id], decision: {approve: false}};
+  const gateway = f.relay.gateway;
+  let fail = true;
+  f.relay.gateway = (method, path, data) => {
+    if (path === `/approvals/${otherId}`) return {status: 'REJECTED'};
+    if (path === `/approvals/${id}` && fail) throw new Error('transient status failure');
+    return gateway(method, path, data);
+  };
+  await f.relay.tick();
+  assert.equal(f.executions.length, 0);
+  assert.equal(f.state.prompts[id].finished, undefined);
+  assert.equal(f.state.prompts[otherId].finished, true);
+  assert.equal(f.logs[0].stage, 'reconcile');
+  fail = false;
+  await f.relay.tick(); await f.relay.tick();
+  assert.equal(f.executions.length, 1); assert.equal(f.state.prompts[id].finished, true);
+});
+
+test('an ambiguous execution failure is isolated and its durable claim prevents replay after restart', async () => {
+  const f = fixture(), otherId = '22345678-1234-1234-1234-123456789abc';
+  await f.relay.tick(); f.events([event]);
+  f.state.prompts[otherId] = {...prompts[id], decision: {approve: false}};
+  const gateway = f.relay.gateway;
+  let saved;
+  f.relay.save = state => {saved = structuredClone(state);};
+  f.relay.gateway = (method, path, data) => {
+    if (path === `/approvals/${otherId}`) return {status: 'REJECTED'};
+    if (path.endsWith('/execute')) {
+      assert.equal(saved.prompts[id].executionAttempted, true);
+      f.executions.push(path); f.record.status = 'CONSUMED';
+      throw new Error('execution response lost');
+    }
+    return gateway(method, path, data);
+  };
+  await f.relay.tick();
+  assert.equal(f.state.prompts[otherId].finished, true);
+  assert.equal(f.logs[0].stage, 'reconcile');
+  const restarted = new ApprovalRelay({...f.relay, state: structuredClone(saved)});
+  await restarted.tick(); await restarted.tick();
+  assert.equal(f.executions.length, 1);
+  assert.equal(restarted.state.prompts[id].finished, true);
+  assert.ok(f.sends.some(item => item.data.body?.includes('uncertain')));
 });
 
 function reaction(key = '✅', target = '$prompt', sender = user) {

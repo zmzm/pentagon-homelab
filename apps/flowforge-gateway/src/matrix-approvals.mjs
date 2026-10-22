@@ -37,9 +37,17 @@ export function messageChunks(text) {
 }
 
 export class ApprovalRelay {
-  constructor({room, users, matrix, gateway, state, save, now = Date.now}) {
-    Object.assign(this, {room, users, matrix, gateway, state, save, now});
+  constructor({room, users, matrix, gateway, state, save, now = Date.now, log = entry => process.stdout.write(JSON.stringify(entry) + '\n')}) {
+    Object.assign(this, {room, users, matrix, gateway, state, save, now, log});
     this.state.prompts ||= {};
+  }
+  async processOperation(id, stage, operation) {
+    try { await operation(); }
+    catch {
+      // Keep retry state and execution claims intact; never log upstream errors or payloads.
+      this.log({timestamp: new Date(this.now()).toISOString(), event: 'approval_relay_operation_failed',
+        code: 'APPROVAL_RELAY_OPERATION_FAILED', approvalId: id, stage});
+    }
   }
   async sync() {
     const filter = {room: {rooms: [this.room], timeline: {types: ['m.room.message', 'm.reaction'], limit: 100}, state: {types: []}, ephemeral: {types: []}}, presence: {types: []}, account_data: {types: []}};
@@ -113,21 +121,23 @@ export class ApprovalRelay {
     }
     const pending = (await this.gateway('GET', '/approvals')).requests;
     for (const request of pending) {
-      let prompt = this.state.prompts[request.id];
-      if (!prompt) {
-        prompt = this.state.prompts[request.id] = {preparedAt: this.now(), expiresAt: request.expiresAt}; this.save(this.state);
-      }
-      if (!prompt.eventId && !prompt.finished) {
-        const description = JSON.stringify({tool: request.tool, arguments: request.arguments, userRequest: request.context.userRequest}, null, 2);
-        // Never truncate a proposed action: approval must present every argument.
-        if (description.length > 10000) {
-          await this.notify(request.id, 'oversize', `Approval ${request.id} is too large to review safely in Matrix. No action will execute; use the operator API to review or reject it.`);
-          prompt.finished = true; this.save(this.state); continue;
+      await this.processOperation(request.id, 'prompt', async () => {
+        let prompt = this.state.prompts[request.id];
+        if (!prompt) {
+          prompt = this.state.prompts[request.id] = {preparedAt: this.now(), expiresAt: request.expiresAt}; this.save(this.state);
         }
-        const response = await this.notify(request.id, 'prompt', `Approval required (expires ${new Date(request.expiresAt).toISOString()})\n${description}\nTap ✅ to approve this exact action, or ❌ to reject. Your tap takes effect immediately; removing a reaction does not undo it.\nText fallback:\n!approve ${request.id}\n!reject ${request.id}`);
-        prompt.eventId = response.event_id; check(prompt.eventId, 'MISSING_PROMPT_EVENT'); this.save(this.state);
-      }
-      if (prompt.eventId && !prompt.finished && !prompt.decision) await this.controls(request.id, prompt);
+        if (!prompt.eventId && !prompt.finished) {
+          const description = JSON.stringify({tool: request.tool, arguments: request.arguments, userRequest: request.context.userRequest}, null, 2);
+          // Never truncate a proposed action: approval must present every argument.
+          if (description.length > 10000) {
+            await this.notify(request.id, 'oversize', `Approval ${request.id} is too large to review safely in Matrix. No action will execute; use the operator API to review or reject it.`);
+            prompt.finished = true; this.save(this.state); return;
+          }
+          const response = await this.notify(request.id, 'prompt', `Approval required (expires ${new Date(request.expiresAt).toISOString()})\n${description}\nTap ✅ to approve this exact action, or ❌ to reject. Your tap takes effect immediately; removing a reaction does not undo it.\nText fallback:\n!approve ${request.id}\n!reject ${request.id}`);
+          prompt.eventId = response.event_id; check(prompt.eventId, 'MISSING_PROMPT_EVENT'); this.save(this.state);
+        }
+        if (prompt.eventId && !prompt.finished && !prompt.decision) await this.controls(request.id, prompt);
+      });
     }
     const response = await this.sync();
     const timeline = response.rooms?.join?.[this.room]?.timeline;
@@ -138,9 +148,9 @@ export class ApprovalRelay {
     }
     this.state.since = response.next_batch; this.save(this.state);
     for (const [id, prompt] of Object.entries(this.state.prompts)) {
-      if (prompt.workflowPending) await this.workflowResult(id, prompt);
-      else if (prompt.decision && !prompt.finished) await this.reconcile(id, prompt);
-      else if (!prompt.finished && prompt.expiresAt <= this.now()) await this.finish(id, prompt, {status: 'EXPIRED', expiresAt: prompt.expiresAt});
+      if (prompt.workflowPending) await this.processOperation(id, 'workflow_result', () => this.workflowResult(id, prompt));
+      else if (prompt.decision && !prompt.finished) await this.processOperation(id, 'reconcile', () => this.reconcile(id, prompt));
+      else if (!prompt.finished && prompt.expiresAt <= this.now()) await this.processOperation(id, 'expiry', () => this.finish(id, prompt, {status: 'EXPIRED', expiresAt: prompt.expiresAt}));
     }
     // Bound local bookkeeping; gateway audit remains authoritative.
     const done = Object.entries(this.state.prompts).filter(([, p]) => p.finished && !p.workflowPending);
