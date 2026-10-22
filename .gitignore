@@ -4,6 +4,7 @@
 
 # Private live acceptance evidence (project/task details and Matrix event IDs)
 /reports/hermes-*-acceptance.md
+/reports/hermes-*-evidence.json
 
 # Local Codex/agent metadata
 /.agents/
