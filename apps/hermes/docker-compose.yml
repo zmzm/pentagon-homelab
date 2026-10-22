@@ -1,0 +1,142 @@
+name: personal-agent
+services:
+  hermes:
+    image: ${HERMES_IMAGE:?set an arm64 Hermes image tag or digest}
+    restart: unless-stopped
+    command: [gateway, run]
+    environment:
+      GLM_API_KEY: ${GLM_API_KEY:?set GLM_API_KEY}
+      GLM_BASE_URL: https://api.z.ai/api/coding/paas/v4
+      MATRIX_HOMESERVER: ${MATRIX_HOMESERVER:-https://matrix.pentagonlab.org}
+      MATRIX_ACCESS_TOKEN: ${MATRIX_ACCESS_TOKEN:?set dedicated Hermes bot token}
+      MATRIX_ALLOWED_USERS: ${MATRIX_ALLOWED_USERS:?set allowed Matrix user IDs}
+      MATRIX_ALLOWED_ROOMS: ${MATRIX_ALLOWED_ROOMS:?set allowed Matrix room IDs}
+      MATRIX_HOME_ROOM: ${MATRIX_HOME_ROOM:?set Matrix room for scheduled results}
+      MATRIX_REQUIRE_MENTION: "true"
+      MATRIX_AUTO_THREAD: "true"
+      MATRIX_ENCRYPTION: "false"
+      HERMES_TIMEZONE: Europe/Warsaw
+      GATEWAY_URL: http://flowforge-gateway:8080
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:?set random 32+ character token}
+    volumes:
+      - ../../data/hermes:/opt/data
+      - ./config.yaml:/opt/data/config.yaml:ro
+      - ./SOUL.md:/opt/data/SOUL.md:ro
+      - ./gateway_mcp.py:/integration/gateway_mcp.py:ro
+    networks: [agent, egress]
+    depends_on:
+      flowforge-gateway:
+        condition: service_healthy
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    cpus: 2
+  flowforge-gateway:
+    build: ../flowforge-gateway
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:?set GATEWAY_TOKEN}
+      APPROVER_TOKEN: ${APPROVER_TOKEN:?set a different operator-only token}
+      BROKER_TOKEN: ${BROKER_TOKEN:?set a different broker token}
+      BROKER_URL: http://homelab-broker:8081
+      FLOWFORGE_URL: ${FLOWFORGE_URL:-}
+      FLOWFORGE_TOKEN: ${FLOWFORGE_TOKEN:-}
+      KNOWLEDGE_CLI: /knowledge-router/dist/cli.js
+    volumes:
+      - ../flowforge-gateway/policy.example.json:/config/policy.json:ro
+      - ../../data/flowforge-gateway:/state
+      - ./operator.mjs:/integration/operator.mjs:ro
+      - ${KNOWLEDGE_ROUTER_PATH:-../../../apps/knowledge-router}:/knowledge-router:ro
+      - ${CODING_VAULT_PATH:-../../../apps/obsidian-vaults/coding}:/vaults/coding:ro
+      - ../../data/knowledge-mentory:/vaults/mentory:ro
+    # No published ports. Operator approval uses docker compose exec, documented below.
+    networks: [agent, operations, upstream]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+    mem_limit: 512m
+    cpus: 1
+  flowforge-api:
+    build: ../flowforge
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      FLOWFORGE_TOKEN: ${FLOWFORGE_TOKEN:?set FLOWFORGE_TOKEN}
+      FLOWFORGE_SOURCE_PROJECT: ${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Documents/apps/mentory}
+      GLM_API_KEY: ${GLM_API_KEY:?set GLM_API_KEY}
+      HOME: /state/home
+      XDG_CONFIG_HOME: /state/home/.config
+      XDG_DATA_HOME: /state/home/.local/share
+      XDG_CACHE_HOME: /state/home/.cache
+      NODE_ENV: production
+    volumes:
+      - ../../data/flowforge-api:/state
+      - ${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Documents/apps/mentory}:/source/project:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/pipeline_runner.py:/source/flowforge/pipeline_runner.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/tasks.jsonl:/source/tasks.jsonl:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/steps.json:/source/steps.json:ro
+      - ${OPENCODE_BINARY:-/home/pentagon-admin/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
+      - ${KNOWLEDGE_ROUTER_PATH:-/home/pentagon-admin/Documents/apps/knowledge-router}:/home/pentagon-admin/Documents/apps/knowledge-router:ro
+      - ${CODING_VAULT_PATH:-/home/pentagon-admin/Documents/apps/obsidian-vaults/coding}:/home/pentagon-admin/Documents/apps/obsidian-vaults/coding:ro
+    tmpfs: ["/tmp:size=128m,mode=1777"]
+    networks: [upstream, egress]
+    mem_limit: 2g
+    cpus: 2
+  matrix-approvals:
+    build: ../flowforge-gateway
+    restart: unless-stopped
+    command: [node, src/matrix-approvals.mjs]
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      APPROVER_TOKEN: ${APPROVER_TOKEN:?set APPROVER_TOKEN}
+      GATEWAY_URL: http://flowforge-gateway:8080
+      MATRIX_HOMESERVER: ${MATRIX_HOMESERVER:-https://matrix.pentagonlab.org}
+      MATRIX_ACCESS_TOKEN: ${MATRIX_ACCESS_TOKEN:?set MATRIX_ACCESS_TOKEN}
+      MATRIX_ALLOWED_USERS: ${MATRIX_ALLOWED_USERS:?set MATRIX_ALLOWED_USERS}
+      MATRIX_HOME_ROOM: ${MATRIX_HOME_ROOM:?set MATRIX_HOME_ROOM}
+    volumes:
+      - ../../data/matrix-approvals:/state
+    networks: [agent, egress]
+    depends_on:
+      flowforge-gateway:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.5
+  homelab-broker:
+    build: ../flowforge-gateway
+    restart: unless-stopped
+    command: [node, src/broker.mjs]
+    user: "1000:1000"
+    group_add: ["${DOCKER_GID:?set Docker socket group ID}"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      BROKER_TOKEN: ${BROKER_TOKEN:?set BROKER_TOKEN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../flowforge-gateway/policy.example.json:/config/policy.json:ro
+    networks: [operations]
+    mem_limit: 128m
+    cpus: 0.5
+networks:
+  agent:
+    name: agent-network
+    internal: true
+  operations:
+    internal: true
+  upstream:
+    internal: true
+  egress: {}

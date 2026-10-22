@@ -1,0 +1,174 @@
+import { mkdirSync, readFileSync, writeFileSync, renameSync, openSync, fsyncSync, closeSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { bounded, check } from './common.mjs';
+
+export function decisionFor(event, room, expectedRoom, users, prompts, now) {
+  if (room !== expectedRoom || !users.includes(event.sender) || event.unsigned?.redacted_because) return null;
+  const content = event.content || {};
+  let id, approve;
+  if (event.type === 'm.reaction') {
+    const relation = content['m.relates_to'];
+    if (relation?.rel_type !== 'm.annotation' || !['✅', '❌'].includes(relation.key)) return null;
+    const matches = Object.entries(prompts).filter(([, prompt]) => prompt.eventId && prompt.eventId === relation.event_id);
+    if (matches.length !== 1) return null;
+    id = matches[0][0]; approve = relation.key === '✅';
+  } else if (event.type === 'm.room.message') {
+    if (content.msgtype !== 'm.text' || content['m.relates_to']?.rel_type === 'm.replace') return null;
+    const match = content.body?.trim().match(/^!(approve|reject) ([0-9a-f-]{36})$/);
+    if (!match) return null;
+    id = match[2]; approve = match[1] === 'approve';
+  } else return null;
+  if (!event.event_id || event.event_id.length > 255) return null;
+  const prompt = prompts[id];
+  if (!prompt?.eventId || !Number.isFinite(prompt.expiresAt) || prompt.expiresAt <= now || !Number.isFinite(event.origin_server_ts) || event.origin_server_ts < prompt.preparedAt || event.origin_server_ts > now + 60000 || now - event.origin_server_ts > 600000) return null;
+  if (prompt.decision || prompt.finished) return null;
+  return {id, approve, operator: event.sender, matrixEventId: event.event_id, matrixRoomId: room, promptEventId: prompt.eventId};
+}
+
+export function messageChunks(text) {
+  const chunks = []; let current = '', bytes = 0;
+  for (const character of text) {
+    const size = Buffer.byteLength(character);
+    if (bytes + size > 10000) {chunks.push(current); current = ''; bytes = 0;}
+    current += character; bytes += size;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+export class ApprovalRelay {
+  constructor({room, users, matrix, gateway, state, save, now = Date.now}) {
+    Object.assign(this, {room, users, matrix, gateway, state, save, now});
+    this.state.prompts ||= {};
+  }
+  async sync() {
+    const filter = {room: {rooms: [this.room], timeline: {types: ['m.room.message', 'm.reaction'], limit: 100}, state: {types: []}, ephemeral: {types: []}}, presence: {types: []}, account_data: {types: []}};
+    const query = new URLSearchParams({timeout: '0', filter: JSON.stringify(filter), set_presence: 'offline'});
+    if (this.state.since) query.set('since', this.state.since);
+    return this.matrix('GET', `/sync?${query}`);
+  }
+  async sendEvent(id, suffix, type, content) {
+    // Check encryption before every send, including retries. Never leak plaintext into encrypted rooms.
+    const state = await this.matrix('GET', `/rooms/${encodeURIComponent(this.room)}/state`);
+    check(!state.some(event => event.type === 'm.room.encryption'), 'ENCRYPTED_APPROVAL_ROOM');
+    return this.matrix('PUT', `/rooms/${encodeURIComponent(this.room)}/send/${type}/${encodeURIComponent(`approval-${id}-${suffix}`)}`, content);
+  }
+  async notify(id, suffix, text) {
+    return this.sendEvent(id, suffix, 'm.room.message', {msgtype: 'm.notice', body: text});
+  }
+  async controls(id, prompt) {
+    prompt.controls ||= {};
+    for (const [action, key] of [['approve', '✅'], ['reject', '❌']]) {
+      if (prompt.controls[action]) continue;
+      const response = await this.sendEvent(id, `control-${action}`, 'm.reaction', {'m.relates_to': {rel_type: 'm.annotation', event_id: prompt.eventId, key}});
+      check(response.event_id, 'MISSING_CONTROL_EVENT');
+      prompt.controls[action] = response.event_id; this.save(this.state);
+    }
+  }
+  async reconcile(id, prompt) {
+    const record = await this.gateway('GET', `/approvals/${id}`);
+    if (record.status === 'PENDING') {
+      const decision = {...prompt.decision}; delete decision.id;
+      await this.gateway('POST', `/approvals/${id}`, decision);
+      return this.reconcile(id, prompt);
+    }
+    if (record.status === 'APPROVED') {
+      // Claim once locally before the HTTP call. If delivery is ambiguous, read gateway state;
+      // never blindly replay an execution request after a network failure.
+      if (!prompt.executionAttempted) {
+        prompt.executionAttempted = true; this.save(this.state);
+        await this.gateway('POST', `/approvals/${id}/execute`, {});
+      }
+      return this.finish(id, prompt, await this.gateway('GET', `/approvals/${id}`));
+    }
+    return this.finish(id, prompt, record);
+  }
+  async finish(id, prompt, record) {
+    let text;
+    if (record.status === 'REJECTED') text = `Rejected ${id}. No action was executed.`;
+    else if (['DONE', 'FAILED'].includes(record.status)) text = `Approval ${id}: ${record.status}\n${JSON.stringify(record.outcome).slice(0, 10000)}`;
+    else if (record.expiresAt <= this.now()) text = `Approval ${id} expired. No new execution was attempted.`;
+    else text = `Approval ${id}: execution outcome is uncertain (${record.status}). Inspect safely; do not retry the action automatically.`;
+    if (record.tool === 'flowforge.run' && record.outcome?.data?.run_id) {
+      prompt.workflowPending = true;
+      text = `Approved ${id}. FlowForge planning run ${record.outcome.data.run_id} started. Only concept and grounded planning steps run; the source repository stays read-only. I will post the completed plans here.`;
+    }
+    await this.notify(id, 'result', text);
+    prompt.finished = true; this.save(this.state);
+  }
+  async workflowResult(id, prompt) {
+    const response = await this.gateway('GET', `/approvals/${id}/workflow`);
+    const run = response.data;
+    if (run.status === 'RUNNING') return;
+    const header = `FlowForge task-analysis ${run.status}: task ${run.task_id}, run ${run.run_id}`;
+    const outputs = Object.entries(run.outputs || {}).map(([name, content]) => `\n\n${name}\n${content}`).join('');
+    const text = run.status === 'DONE' ? header + outputs : header + `\nError: ${run.error || 'UNKNOWN'}`;
+    const chunks = messageChunks(text);
+    for (let index = 0; index < chunks.length; index++) await this.notify(id, `workflow-${index}`, chunks[index]);
+    prompt.workflowPending = false; this.save(this.state);
+  }
+  async tick() {
+    if (!this.state.since) {
+      this.state.since = (await this.sync()).next_batch; this.save(this.state);
+    }
+    const pending = (await this.gateway('GET', '/approvals')).requests;
+    for (const request of pending) {
+      let prompt = this.state.prompts[request.id];
+      if (!prompt) {
+        prompt = this.state.prompts[request.id] = {preparedAt: this.now(), expiresAt: request.expiresAt}; this.save(this.state);
+      }
+      if (!prompt.eventId && !prompt.finished) {
+        const description = JSON.stringify({tool: request.tool, arguments: request.arguments, userRequest: request.context.userRequest}, null, 2);
+        // Never truncate a proposed action: approval must present every argument.
+        if (description.length > 10000) {
+          await this.notify(request.id, 'oversize', `Approval ${request.id} is too large to review safely in Matrix. No action will execute; use the operator API to review or reject it.`);
+          prompt.finished = true; this.save(this.state); continue;
+        }
+        const response = await this.notify(request.id, 'prompt', `Approval required (expires ${new Date(request.expiresAt).toISOString()})\n${description}\nTap ✅ to approve this exact action, or ❌ to reject. Your tap takes effect immediately; removing a reaction does not undo it.\nText fallback:\n!approve ${request.id}\n!reject ${request.id}`);
+        prompt.eventId = response.event_id; check(prompt.eventId, 'MISSING_PROMPT_EVENT'); this.save(this.state);
+      }
+      if (prompt.eventId && !prompt.finished && !prompt.decision) await this.controls(request.id, prompt);
+    }
+    const response = await this.sync();
+    const timeline = response.rooms?.join?.[this.room]?.timeline;
+    // A limited sync has a gap: skip its commands rather than acting on incomplete history.
+    for (const event of timeline?.limited ? [] : timeline?.events || []) {
+      const decision = decisionFor(event, this.room, this.room, this.users, this.state.prompts, this.now());
+      if (decision) { this.state.prompts[decision.id].decision = decision; this.save(this.state); }
+    }
+    this.state.since = response.next_batch; this.save(this.state);
+    for (const [id, prompt] of Object.entries(this.state.prompts)) {
+      if (prompt.workflowPending) await this.workflowResult(id, prompt);
+      else if (prompt.decision && !prompt.finished) await this.reconcile(id, prompt);
+      else if (!prompt.finished && prompt.expiresAt <= this.now()) await this.finish(id, prompt, {status: 'EXPIRED', expiresAt: prompt.expiresAt});
+    }
+    // Bound local bookkeeping; gateway audit remains authoritative.
+    const done = Object.entries(this.state.prompts).filter(([, p]) => p.finished && !p.workflowPending);
+    for (const [id] of done.slice(0, Math.max(0, done.length - 200))) delete this.state.prompts[id];
+    this.save(this.state);
+  }
+}
+
+export function jsonClient(base, token, prefix = '') {
+  return async (method, path, payload) => {
+    const response = await fetch(base + prefix + path, {method, headers: {authorization: `Bearer ${token}`, 'content-type': 'application/json', 'user-agent': 'Pentagon-Approval-Relay/1.0'}, body: payload === undefined ? undefined : JSON.stringify(payload), redirect: 'error', signal: AbortSignal.timeout(35000)});
+    const raw = await bounded(response.body, 1048576); check(response.ok, 'APPROVAL_RELAY_HTTP_FAILED', 502);
+    return JSON.parse(raw.toString());
+  };
+}
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const env = process.env;
+  check(env.APPROVER_TOKEN?.length >= 32 && env.MATRIX_ACCESS_TOKEN && env.MATRIX_HOME_ROOM && env.MATRIX_ALLOWED_USERS, 'INVALID_APPROVAL_RELAY_CONFIG');
+  const directory = '/state'; mkdirSync(directory, {recursive: true, mode: 0o700});
+  const path = `${directory}/matrix-approvals.json`;
+  let state; try {state = JSON.parse(readFileSync(path));} catch (e) { if (e.code !== 'ENOENT') throw e; state = {}; }
+  function save(value) {
+    writeFileSync(`${path}.tmp`, JSON.stringify(value), {mode: 0o600, flush: true}); renameSync(`${path}.tmp`, path);
+    const fd = openSync(directory, 'r'); try {fsyncSync(fd);} finally {closeSync(fd);}
+  }
+  const relay = new ApprovalRelay({room: env.MATRIX_HOME_ROOM, users: env.MATRIX_ALLOWED_USERS.split(',').map(x => x.trim()).filter(Boolean), matrix: jsonClient(env.MATRIX_HOMESERVER, env.MATRIX_ACCESS_TOKEN, '/_matrix/client/v3'), gateway: jsonClient(env.GATEWAY_URL, env.APPROVER_TOKEN), state, save});
+  while (true) {
+    try {await relay.tick();} catch {process.stdout.write(JSON.stringify({timestamp: new Date().toISOString(), event: 'approval_relay_retry', status: 'failed'}) + '\n');}
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+}

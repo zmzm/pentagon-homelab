@@ -1,0 +1,36 @@
+model:
+  provider: zai
+  default: glm-5.3
+  base_url: https://api.z.ai/api/coding/paas/v4
+agent:
+  max_turns: 15
+  api_max_retries: 1
+  auto_recovery_cycles: 0
+  disabled_toolsets:
+    - terminal
+    - file
+    - code_execution
+    - delegation
+    - browser
+    - skills
+    - messaging
+    - debugging
+platform_toolsets:
+  cli: [memory, session_search, clarify, cronjob, mcp-personal]
+  matrix: [memory, session_search, clarify, cronjob, mcp-personal]
+  cron: [memory, session_search, mcp-personal]
+group_sessions_per_user: true
+tool_loop_guardrails:
+  non_interactive_hard_stop_enabled: true
+mcp_servers:
+  personal:
+    command: python
+    args: [/integration/gateway_mcp.py]
+    env:
+      GATEWAY_URL: ${GATEWAY_URL}
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN}
+    timeout: 40
+    tools:
+      include: [knowledge_search, flowforge_list_workflows, flowforge_list_tasks, flowforge_get_run, flowforge_run, homelab_inspect_service, homelab_get_logs, homelab_restart_service]
+      resources: false
+      prompts: false

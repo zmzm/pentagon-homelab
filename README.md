@@ -209,6 +209,10 @@ Coturn was removed on 2026-10-11 because the home connection is behind CGNAT and
 
 ---
 
+## Personal Agent PoC
+
+[Hermes personal runtime](apps/hermes/README.md) runs through GLM and Matrix with a constrained gateway, isolated Docker broker, trusted Matrix approvals and a planning-only FlowForge API. Matrix service inspection and scheduled delivery are verified; live two-stage planning saved both plan files and delivered all result chunks to Matrix. Live acceptance reports contain private project details and are kept locally outside Git. Existing production workflows and monitoring remain independent.
+
 ## Automation
 
 ### Watchtower

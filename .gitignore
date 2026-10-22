@@ -2,6 +2,9 @@
 /data/
 /backups/
 
+# Private live acceptance evidence (project/task details and Matrix event IDs)
+/reports/hermes-*-acceptance.md
+
 # Local Codex/agent metadata
 /.agents/
 /.codex/
@@ -59,3 +62,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Python bytecode
+__pycache__/
+*.pyc
