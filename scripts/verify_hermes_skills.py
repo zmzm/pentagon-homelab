@@ -270,11 +270,12 @@ print('PASS: isolated home passes native CLI ownership/permissions checks as obs
                 PYTHON, '-', input=GUARD_CHECK, offline_diagnostic=not live)
             print(record['http_guard_check'], flush=True)
             prompts = {
-                'diagnosis': 'Diagnose Vaultwarden in homelab: inspect its current state, '
-                    'latest available logs and documented procedures. Explain possible causes '
-                    'of problems and verification limits. Diagnosis only.',
-                'ambiguous': 'Diagnose Matrix in homelab: by Matrix I could mean '
-                    'the homeserver or its database; I have not decided yet. Diagnosis only.',
+                # Match the authorized Matrix acceptance requests. The skill must
+                # supply the evidence/uncertainty policy without a report-writing
+                # instruction in the test prompt influencing the answer style.
+                'diagnosis': 'Diagnose Vaultwarden: check its state, logs and documented procedures.',
+                'ambiguous': 'Diagnose Matrix; I have not decided whether I mean '
+                    'the homeserver or its database.',
             }
             record['prompts'] = prompts
             record['cli_runs'] = []

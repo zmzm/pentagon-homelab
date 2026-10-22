@@ -134,9 +134,28 @@ requests during diagnosis. This is a procedural boundary, not a new gateway
 permission class or a hard per-request removal of write tools.
 
 The procedure clarifies ambiguous services, inspects state, reads a bounded log
-tail when useful, and searches `project="homelab"`. Its English report separates
-live observations, original documentation references and explicitly labelled
-hypotheses, then suggests an action and states verification limits.
+tail when useful, and searches `project="homelab"`. Its English reply leads with
+a short plain-language assessment, distinguishes observed facts from documented
+guidance and labelled hypotheses, and explains the useful next step and material
+verification limits. Routine replies use readable source labels; exact file/line
+references and technical details are supplied when useful or requested. Native
+tool results retain the full evidence and original documentation references.
+
+Installed `gateway/display_config.py` and `gateway/run_turn.py` support the
+Matrix-specific `display.platforms.matrix` settings used here: `tool_progress: log`
+keeps tool-progress messages out of chat and writes them to the native rotating,
+redacted `logs/tool_calls.log` under the Hermes home (5 MiB × 3). Native session
+tool results and gateway audit remain available. `interim_assistant_messages: false`
+hides intermediate schema/skill commentary; `show_reasoning: false` keeps reasoning
+hidden. These are presentation settings, with no additional tool permissions.
+The gateway resolves display settings for each turn. A continuing conversation
+can still reuse its saved system prompt and previously loaded skill content;
+verify revised writing instructions in a fresh user-controlled session. In
+Matrix, send standalone `!new` without a mention/display-name prefix, choose
+**Approve Once** if prompted, and wait for the reset confirmation before testing.
+Keep the confirmation guard enabled. The operator must not send these events
+on the user's behalf. Refresh the homelab knowledge snapshot after publishing
+changes to its allowlisted documentation, using the refresh procedure below.
 
 ### Skills validation and rollout
 
@@ -171,8 +190,10 @@ and `project="homelab"` retrieval before reaching the real gateway; any blocked
 attempt fails acceptance. Native `skill_view` selection, inspect/log/search
 calls, bounded log requests and absence of write-tool calls are checked from
 the isolated session database. Inspect the saved English answer and tool
-results manually: ensure state claims match runtime evidence, documentation is
-cited by original `source.reference`/`source.kind`, hypotheses are labelled, and
+results manually: ensure the answer is readable without internal tool names,
+raw fields or snapshot metadata; state claims match runtime evidence; documented
+guidance is attributed clearly and traceable to original `source.reference` and
+`source.kind` in the retained tool results; hypotheses are labelled; and
 unverified reachability/backup success is not asserted. Source/answer separation
 is semantic review, not a keyword-only assertion. Successful native loading by
 itself does not prove model selection or answer quality.
@@ -185,8 +206,9 @@ After approved deployment, repeat an authorized diagnostic request in Matrix
 and inspect the native session/tool trace and gateway audit for no writes or
 approval creation. Do not use a real restart as a diagnostic test.
 
-Rollout still requires operator deployment; **no production restart is part of
-this change**. From `apps/hermes`, after validation/review:
+Initial installation requires operator deployment to add the mounts and load
+the plugin. From `apps/hermes`, after validation/review, recreate only Hermes
+when deployment is needed:
 
 ```bash
 docker compose config --quiet
@@ -201,23 +223,22 @@ Because this README is in the homelab documentation allowlist, refresh/check
 the homelab knowledge projection with the documented host commands when
 publishing the updated documentation. Projection refresh needs no restart.
 
-2026-10-22 latest acceptance: native discovery/index/loading and all three
-platform schema checks **passed**, followed by a successful fresh live CLI run
-using the configured GLM provider and the unchanged diagnostic prompts.
-Vaultwarden loaded the skill, inspected current state, read 100 log lines and
-searched `project="homelab"`. Manual review confirmed English reporting with
-separate runtime observations, original documentation citations, explicitly
-labelled hypotheses and verification limits. The wording no longer asserts
-continuous historical health or speculates about user motivation.
+2026-10-22 latest acceptance covers **isolated CLI and real Matrix behavior**.
+Native discovery/loading and effective CLI/Matrix/cron permission checks passed.
+The configured GLM provider selected the skill and used service inspection,
+100-line logs and `project="homelab"` retrieval. An ambiguous Matrix target
+produced a question with no personal MCP calls before an actual user choice.
+No diagnostic write or approval request was attempted. Manual review and user
+feedback accepted the short English Matrix reply; technical progress stayed in
+private logs. The final Matrix turn loaded the exact current curated skill.
+See [the sanitized deployment and acceptance report](../../reports/2026-10-22-hermes-skills.md)
+for evidence, earlier failures, a minor wording limitation and rollout details.
 
-The ambiguous Matrix case loaded the skill and called `clarify`. Its result was
-unanswered/undelivered with no user response; the model then ended with an
-English question asking which target to diagnose. It made **no personal MCP
-calls** for that case. Across both cases there were three allowed gateway reads,
-zero write/approval attempts and zero guard blocks. Production container IDs/
-start times and skill/memory hashes were unchanged. No deployment or production
-restart occurred. Coverage is **CLI-only**; Matrix messaging has not been
-behaviorally validated.
+The isolated CLI ambiguous case also stopped when native clarification was
+unanswered/undelivered, with no personal MCP calls. Its validation guard and
+production isolation remained intact. The initial integration deployment
+recreated only Hermes and preserved memory/runtime skills; subsequent writing
+and display changes used the existing mounts and required no further restart.
 
 This fixes an earlier live failure in which the model followed the native
 one-shot clarification fallback and inspected guessed targets. The skill and
