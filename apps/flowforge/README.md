@@ -42,7 +42,12 @@ for review and never replayed automatically. Plans are at most 40 KB each in API
 
 The gateway classifies submission as CONFIRM and task/status reads as READ. The trusted
 Matrix approval listener executes approved requests and polls their specific run, delivering
-completed plans to the same room. An accepted run is not the same as a completed plan.
+completed plans to the same room as full UTF-8 Markdown attachments plus one deterministic
+completion notice. Attachments use only the gateway-redacted API response; raw files in
+this adapter's state directory are never attached. Incomplete delivery retains complete
+available sanitized text and a failure record in relay state, with a bounded text fallback.
+See [delivery, retries and recovery](../hermes/README.md#planning-result-delivery).
+An accepted run is not the same as a completed plan.
 
 ## Verification
 

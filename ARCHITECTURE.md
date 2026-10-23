@@ -57,6 +57,15 @@ trusted approval process still decide whether a requested restart may execute.
 The diagnosis skill discovers coverage when needed and requires the user to
 resolve genuinely ambiguous targets.
 
+The trusted Matrix approval listener polls the approved planning run through the
+gateway, then sends one deterministic completion notice and full UTF-8 Markdown
+attachments from the sanitized response. It never reads raw FlowForge output
+files or calls a model to summarize plans. Its durable state stores sanitized
+contents, upload claims, media URIs and event acknowledgments; uncertain uploads
+stop for review, while message retries reuse stable Matrix transactions.
+Incomplete delivery retains a failure record and bounded text fallback. See
+[delivery and recovery](apps/hermes/README.md#planning-result-delivery).
+
 The stack is deployed through `apps/hermes/docker-compose.yml` without published
 host ports. Only the broker has a Docker socket; Hermes cannot reach its
 operations network, and the gateway has no internet egress. See

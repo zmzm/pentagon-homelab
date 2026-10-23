@@ -136,6 +136,29 @@ homelab knowledge snapshot using [the documented host commands](apps/hermes/READ
 Documentation-only refreshes need no service restart. Keep service policies,
 credentials, monitoring and existing production schedules unchanged.
 
+## FlowForge planning results in Matrix
+
+The trusted approval relay sends a deterministic completion notice and full
+`concept-plan.md` / `grounded-plan.md` UTF-8 attachments from the gateway-sanitized
+API response. Failed runs receive a short error-code notice. See
+[the 2026-10-23 deployment record](reports/2026-10-23-flowforge-matrix-delivery.md)
+for the fixture coverage and read-only rollout checks; this rollout did not run
+a paid workflow or send live test attachments.
+
+The durable delivery record is `workflowDelivery` in each prompt in
+`data/matrix-approvals/matrix-approvals.json`. An incomplete delivery remains
+`failed`, retaining all available sanitized plan text and a bounded text fallback.
+Confirmed uploads retain their media URI; unconfirmed file/notice sends reuse the
+same Matrix transaction. An upload left `uncertain` is held for operator review,
+and failed delivery records are not pruned with successful prompts.
+
+Stop the relay and back up its state before any manual recovery. Do not clear
+uncertain upload claims without establishing whether Matrix accepted the upload.
+Keep approval decisions, execution claims, the state volume and Matrix credentials
+intact. Do not attach raw files from `data/flowforge-api`, or rerun paid planning
+to repair result delivery. Follow [the targeted relay rollout and recovery procedure](apps/hermes/README.md#planning-result-delivery).
+Documentation snapshot refreshes do not require restarting other services.
+
 ---
 
 # Ansible

@@ -15,7 +15,7 @@ monitoring and existing application services remain independent.
 | Permissions | READ/AUTO_SAFE/CONFIRM/DENY; exact-action, durable single-use approvals; no model approver credential |
 | Matrix approvals | Separate trusted listener posts exact actions and accepts commands or seeded reactions only from allowed Matrix users in the configured room; security tests pass |
 | Knowledge Router | Existing router searches coding guidance, completed Mentory task records/history, and a separate allowlisted homelab documentation snapshot; homelab deployment/refresh is explicit |
-| FlowForge | Planning-only API around existing runner, task hashes and read-only source snapshot; real GLM run saved both plans in 633 seconds; all four sanitized result chunks verified in Matrix |
+| FlowForge | Planning-only API around existing runner, task hashes and read-only source snapshot; earlier live GLM run saved both plans in 633 seconds and verified text delivery; complete sanitized Markdown attachments deployed 2026-10-23, validated with isolated fixtures and read-only runtime checks |
 | Scheduling | Live one-run health check survived restart, executed and delivered once to Matrix; job is now disabled |
 | Voice, structured entity memory | Deferred |
 
@@ -355,16 +355,18 @@ To deploy only this relay change using the existing environment and state volume
 
 ```bash
 cd apps/hermes
+docker compose config --quiet
 docker compose build matrix-approvals
-docker compose up -d --no-deps matrix-approvals
+docker compose up -d --no-deps --wait --wait-timeout 60 matrix-approvals
 docker compose ps matrix-approvals
 docker compose logs --tail 50 matrix-approvals
 ```
 
 No gateway, planner or broker rollout is required. Validate with the local gateway
-test suite first; deploying the relay resumes pending deliveries without starting
-another planning run. This delivery change has not been deployed or validated with
-a paid workflow.
+test suite first; deploying the relay resumes tracked result deliveries without
+re-executing their runs. The attachment delivery change was deployed on 2026-10-23
+from implementation commit `11ef38a`; see [deployment and verification](../../reports/2026-10-23-flowforge-matrix-delivery.md).
+No paid workflow or live Matrix attachment send was used for rollout validation.
 
 The agent cannot grant approval and should not resubmit or retry a pending write. Approval
 commands belong to the listener; Hermes should leave their execution to it. A plain chat

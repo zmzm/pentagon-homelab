@@ -211,7 +211,7 @@ Coturn was removed on 2026-10-11 because the home connection is behind CGNAT and
 
 ## Personal Agent PoC
 
-[Hermes personal runtime](apps/hermes/README.md) runs through GLM and Matrix with a constrained gateway, isolated Docker broker, trusted Matrix approvals and a planning-only FlowForge API. Matrix service inspection and scheduled delivery are verified; live two-stage planning saved both plan files and delivered all result chunks to Matrix. Live acceptance reports contain private project details and are kept locally outside Git. Existing production workflows and monitoring remain independent.
+[Hermes personal runtime](apps/hermes/README.md) runs through GLM and Matrix with a constrained gateway, isolated Docker broker, trusted Matrix approvals and a planning-only FlowForge API. Matrix service inspection and scheduled delivery are verified; an earlier live two-stage planning run saved both plan files and verified text delivery. On 2026-10-23 the approval relay was upgraded to send a deterministic completion notice and complete gateway-sanitized Markdown attachments, with durable delivery tracking and bounded failure fallback. [Deployment checks and limits](reports/2026-10-23-flowforge-matrix-delivery.md) cover isolated attachment tests and read-only runtime checks; no paid workflow or live attachment send was used for this rollout. Live acceptance reports contain private project details and are kept locally outside Git. Existing production workflows and monitoring remain independent.
 
 Read-only `homelab_list_services` discovers configured tool coverage from the
 gateway policy for CLI, Matrix and cron. It returns service identifiers and

@@ -74,7 +74,7 @@ ports. Their source and persistent data are separate from the core services.
 | Hermes | Matrix conversation, CLI and conversational schedules | `apps/hermes` | `data/hermes` |
 | FlowForge gateway | Authenticated tool API, policy discovery, audit and approvals | `apps/flowforge-gateway` | `data/flowforge-gateway` |
 | Homelab broker | Allowlisted Docker inspection, logs and restart execution | `apps/flowforge-gateway` | none |
-| Matrix approval listener | Trusted user approval verification and exact-action execution | `apps/flowforge-gateway` | `data/matrix-approvals` |
+| Matrix approval listener | Trusted approval verification, exact-action execution and sanitized planning-result attachments | `apps/flowforge-gateway` | `data/matrix-approvals` |
 | FlowForge planning API | Planning around the existing workflow runner | `apps/flowforge` | `data/flowforge-api` |
 
 `homelab_list_services` reports configured tool coverage from gateway policy,
@@ -84,6 +84,13 @@ Docker configuration, secrets, host paths or environment variables. Existing
 restart authorization and confirmation remain authoritative. See
 [the API and operating guide](apps/hermes/README.md#service-discovery-and-rollout)
 and [deployment verification](reports/2026-10-22-homelab-service-discovery.md).
+
+The approval listener delivers complete concept/grounded Markdown plans from the
+gateway-sanitized response using the existing Matrix account. Its state retains
+plan text and delivery progress, including failed/uncertain uploads and bounded
+text fallback. The 2026-10-23 rollout recreated only this listener; see
+[delivery recovery](apps/hermes/README.md#planning-result-delivery) and
+[rollout verification](reports/2026-10-23-flowforge-matrix-delivery.md).
 
 ---
 
