@@ -168,7 +168,7 @@ python3 scripts/verify_hermes_skills.py
 This uses the live container's exact image ID with networking **disabled**, fake
 gateway credentials, a disposable tmpfs Hermes home and a copy of only the
 existing skills. It mounts the proposed configuration/curated skill/helper,
-registers all eight existing MCP schemas through Hermes' native subprocess
+registers all nine MCP schemas through Hermes' native subprocess
 environment, checks effective CLI/Matrix/cron schemas (including prohibited
 tools and absence of `skill_manage`), and verifies the native prompt index,
 `skills_list` and `skill_view` resolve the expected mounted skill and exact bytes.
@@ -183,13 +183,15 @@ python3 scripts/verify_hermes_skills.py --live
 ```
 
 It forwards only the existing GLM/gateway credentials, keeps Matrix credentials
-absent, and asks two fresh CLI sessions to diagnose Vaultwarden and clarify an
-ambiguous Matrix target. It retains all existing tool schemas. A validation-only
-copy of the MCP bridge blocks any HTTP call other than diagnostic service reads
+absent, and asks three fresh CLI sessions to diagnose Vaultwarden, clarify an
+ambiguous Matrix target, and discover configured coverage without choosing a
+target. It retains all existing tool schemas. A validation-only
+copy of the MCP bridge blocks any HTTP call other than policy discovery, diagnostic service reads
 and `project="homelab"` retrieval before reaching the real gateway; any blocked
 attempt fails acceptance. Native `skill_view` selection, inspect/log/search
 calls, bounded log requests and absence of write-tool calls are checked from
-the isolated session database. Inspect the saved English answer and tool
+the isolated session database. The coverage case must call discovery and ask
+for a target without inspecting one. Inspect the saved English answer and tool
 results manually: ensure the answer is readable without internal tool names,
 raw fields or snapshot metadata; state claims match runtime evidence; documented
 guidance is attributed clearly and traceable to original `source.reference` and
@@ -218,7 +220,9 @@ docker compose exec -T hermes python - < ../../scripts/verify_hermes_tool_regist
 
 Recreation adds the two mounts and loads the plugin/configuration/SOUL. The
 existing runtime skills and writable memory remain mounted. Do not recreate
-the gateway, broker, Matrix services or other applications for this skill.
+the gateway, broker, Matrix services or other applications for the initial skill
+installation alone. The discovery API addition also needs the gateway rollout
+described under [Service discovery and rollout](#service-discovery-and-rollout) below.
 Because this README is in the homelab documentation allowlist, refresh/check
 the homelab knowledge projection with the documented host commands when
 publishing the updated documentation. Projection refresh needs no restart.
@@ -329,6 +333,7 @@ use verified Matrix event metadata from the separate trusted listener.
 | GET `/flowforge/tasks` | — | READ |
 | POST `/flowforge/run` | `{workflow,input}` | workflow policy; task-analysis is CONFIRM |
 | GET `/flowforge/runs/:id` | — | READ |
+| GET `/homelab/services` | — | READ; configured tool coverage from policy |
 | GET `/homelab/services/:name` | — | READ |
 | GET `/homelab/services/:name/logs` | `lines=1..500`, optional ISO `since` | READ |
 | POST `/homelab/services/:name/restart` | `{}` | service policy |
@@ -349,6 +354,62 @@ Success is `{success:true,data:...}`; failures use `{success:false,error:"CODE",
 Approval-required is a tool-level failure with HTTP 200. Other errors use 4xx/5xx. Inputs
 are limited to 64 KiB; upstream results to 128 KiB; normal upstream calls to 30 seconds.
 Long planning jobs acknowledge promptly and expose status. No automatic write retries.
+
+### Service discovery and rollout
+
+`homelab_list_services(session_id, user_request)` in the existing personal MCP
+bridge calls GET `/homelab/services`. The shared `mcp-personal` group selects it
+for CLI, Matrix and cron through the explicit MCP include list. It returns:
+
+```json
+{"success":true,"data":{"coverage":"configured_tool_coverage","services":[{"service":"example-service","restart":"CONFIRM"}]}}
+```
+
+The gateway derives the array only from its loaded `policy.services`, including
+services whose restart level is DENY. An empty policy returns an empty array.
+Each entry contains only the configured identifier and `restart` level
+(`AUTO_SAFE`, `CONFIRM`, or `DENY`). This is configured tool coverage, not a list
+of currently running or healthy services. Discovery makes no broker or Docker
+request and returns no container names/configuration, secrets, host paths,
+environment variables, workflows or project configuration. It requires the
+normal gateway bearer credential and audit headers; it accepts no filters.
+Restart levels are informational: authorization and confirmation are checked
+again when a restart is requested. Discovery creates no approval or permission
+grant and does not change any existing service policy.
+
+The diagnosis skill discovers coverage when an identifier is unknown or coverage
+is requested. Genuinely ambiguous targets still require clarification before
+personal MCP calls. When discovery cannot resolve a target the user has chosen,
+or the user has not chosen one, it asks and waits; it never substitutes a
+configured service or chooses one merely because it is the only plausible entry.
+
+This change is not deployed by the source update or fixture tests. After review,
+the operator should run the offline installed-image registration check above,
+refresh/check the homelab knowledge projection because this README changed,
+and deploy from `apps/hermes` using the existing private `.env` and policy:
+
+```bash
+docker compose config --quiet
+docker compose build flowforge-gateway
+docker compose up -d --no-deps flowforge-gateway
+```
+
+Wait for the gateway health check to pass, then recreate Hermes so its MCP
+subprocess, include list and native skill are reloaded:
+
+```bash
+docker compose up -d --no-deps --force-recreate hermes
+docker compose exec -T hermes python - < ../../scripts/verify_hermes_tool_registration.py
+docker compose exec -T hermes python - < ../../scripts/verify_hermes_mcp.py
+```
+
+These are future operator steps, not actions performed as part of this change.
+No policy edit, new credential, broker restart or restart of Matrix or the
+inventoried applications is needed for discovery. Registration verification expects
+nine personal tools and checks effective CLI, Matrix and cron selections. The
+MCP smoke check reads policy coverage before its existing Vaultwarden inspection.
+Live model/Matrix behavioral acceptance remains a separate authorized step; do
+not request a restart to test discovery or diagnosis.
 
 ## Knowledge scope, audit and metrics
 
@@ -485,7 +546,13 @@ From the homelab root:
 
 ```bash
 python3 -m unittest discover -s apps/flowforge -p 'test_*.py'
+python3 -m unittest discover -s apps/hermes -p 'test_*.py'
+python3 -m unittest discover -s scripts -p 'test_verify_hermes_skills.py'
 ```
+
+The Hermes bridge fixture tests require a Python environment with the MCP SDK
+and Pydantic, as provided by the Hermes image. They use mocked HTTP responses
+and make no request to deployed services.
 
 From `apps/hermes`:
 
@@ -495,8 +562,9 @@ docker compose exec -T hermes python - < ../../scripts/verify_hermes_mcp.py
 docker compose exec -T flowforge-api python3 - < ../../scripts/verify_flowforge_preflight.py
 ```
 
-The first container check uses Hermes' actual launcher/environment filtering and Matrix
-tool selection; the second performs a real MCP handshake and read-only Vaultwarden call.
+The first container check uses Hermes' actual launcher/environment filtering and
+CLI/Matrix/cron tool selection; the second performs a real MCP handshake, policy
+discovery and a read-only Vaultwarden call.
 Gateway/approval tests use fake local backends. Projection tests cover source boundaries,
 refresh/citations, source selection and the actual existing Knowledge Router CLI. The homelab
 integration test asks about Matrix external exposure, database backups and the DNS loop

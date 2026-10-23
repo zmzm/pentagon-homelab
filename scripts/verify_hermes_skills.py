@@ -30,8 +30,9 @@ def call(path, session_id, user_request, payload=None, approval_id=None):
     route = urllib.parse.urlsplit(path)
     allowed = ((route.path == '/knowledge/search' and isinstance(payload, dict)
                 and payload.get('project') == 'homelab') or
-               (payload is None and re.fullmatch(
-                   r'/homelab/services/[a-z0-9_-]+(?:/logs)?', route.path) is not None))
+               (payload is None and (
+                   (route.path == '/homelab/services' and not route.query) or
+                   re.fullmatch(r'/homelab/services/[a-z0-9_-]+(?:/logs)?', route.path) is not None)))
     allowed = allowed and approval_id is None
     event = {'path': path, 'session_id': session_id, 'allowed': allowed,
              'payload': payload}
@@ -89,12 +90,13 @@ for path,payload,approval in (
     assert m.call(path,'guard-fixture','fixture',payload,approval)['error']=='VALIDATION_READ_ONLY_GUARD'
 assert not forwarded
 for path,payload in (
+    ('/homelab/services',None),
     ('/homelab/services/vaultwarden',None),
     ('/homelab/services/vaultwarden/logs?lines=50',None),
     ('/knowledge/search',{'project':'homelab','query':'Vaultwarden'}),
 ):
     assert m.call(path,'guard-fixture','fixture',payload)['success']
-assert len(forwarded)==3
+assert len(forwarded)==4
 Path('/opt/data/diagnosis-http.jsonl').unlink()
 print('PASS: validation HTTP guard forwards diagnostic reads and blocks restart/workflow/approval requests (local fixtures only)')
 '''
@@ -147,7 +149,8 @@ def check_behavior(observation, prompts):
                 fn = call['function']
                 args = fn['arguments']
                 raw_calls.append({'name': fn['name'], 'arguments': json.loads(args) if isinstance(args, str) else args})
-        allowed = {'skills_list', 'skill_view', 'clarify', 'mcp__personal__homelab_inspect_service',
+        allowed = {'skills_list', 'skill_view', 'clarify', 'mcp__personal__homelab_list_services',
+                   'mcp_personal_homelab_list_services', 'mcp__personal__homelab_inspect_service',
                    'mcp__personal__homelab_get_logs', 'mcp__personal__knowledge_search',
                    'mcp_personal_homelab_inspect_service', 'mcp_personal_homelab_get_logs',
                    'mcp_personal_knowledge_search'}
@@ -180,12 +183,17 @@ def check_behavior(observation, prompts):
                     assert 1 <= call['arguments'].get('lines', 0) <= 200
                 if call['name'].endswith(('_homelab_get_logs', '_homelab_inspect_service')):
                     assert call['arguments']['service'] == 'vaultwarden'
+        elif key == 'coverage':
+            if not any(c['name'].endswith('_homelab_list_services') for c in calls):
+                raise RuntimeError('Unknown target coverage was not discovered')
+            if any(c['name'].startswith('mcp') and not c['name'].endswith('_homelab_list_services') for c in calls):
+                raise RuntimeError('Discovery selected a target without a user choice')
         elif any(c['name'].startswith('mcp') for c in calls):
             raise RuntimeError('Ambiguous target was inspected without clarification')
         answers = [m['content'] for m in session['messages'] if m['role'] == 'assistant' and m['content']]
         if not answers:
             raise RuntimeError(f'{key}: no answer')
-        if key == 'ambiguous' and '?' not in answers[-1]:
+        if key in {'ambiguous', 'coverage'} and '?' not in answers[-1]:
             raise RuntimeError('Ambiguous target did not end with a clarification question')
         cases.append({'case': key, 'session_id': session['id'], 'source': session['source'],
                       'model': session['model'], 'raw_calls': raw_calls,
@@ -276,6 +284,9 @@ print('PASS: isolated home passes native CLI ownership/permissions checks as obs
                 'diagnosis': 'Diagnose Vaultwarden: check its state, logs and documented procedures.',
                 'ambiguous': 'Diagnose Matrix; I have not decided whether I mean '
                     'the homeserver or its database.',
+                'coverage': 'I need a service diagnosis but do not know which services '
+                    'your tools cover. Show the available coverage and ask which target '
+                    'I want; I have not chosen a target.',
             }
             record['prompts'] = prompts
             record['cli_runs'] = []

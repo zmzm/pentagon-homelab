@@ -28,6 +28,7 @@ export function operation(tool, args, policy) {
   }
   if (tool === 'flowforge.listWorkflows') { object(args, []); return 'READ'; }
   if (tool === 'flowforge.listTasks') { object(args, []); return 'READ'; }
+  if (tool === 'homelab.listServices') { object(args, []); return 'READ'; }
   if (tool === 'flowforge.getRun') {
     object(args, ['run_id']); check(typeof args.run_id === 'string' && /^[0-9a-f-]{36}$/.test(args.run_id)); return 'READ';
   }
@@ -71,6 +72,10 @@ export function executor(env, policy) {
       catch { check(false, 'KNOWLEDGE_FAILED', 502); }
     }
     if (tool === 'flowforge.listWorkflows') return {workflows: Object.entries(policy.workflows).map(([name, p]) => ({name, permission: p.permission}))};
+    if (tool === 'homelab.listServices') return {
+      coverage: 'configured_tool_coverage',
+      services: Object.entries(policy.services).map(([service, item]) => ({service, restart: item.restart})),
+    };
     if (['flowforge.listTasks', 'flowforge.getRun'].includes(tool)) {
       check(env.FLOWFORGE_URL && env.FLOWFORGE_TOKEN, 'FLOWFORGE_NOT_CONFIGURED', 503);
       const route = tool === 'flowforge.listTasks' ? '/tasks' : `/runs/${args.run_id}`;

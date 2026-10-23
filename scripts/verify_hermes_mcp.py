@@ -1,4 +1,4 @@
-"""Run inside Hermes: real MCP handshake, eight tools, read-only Docker inspection."""
+"""Run inside Hermes: real MCP handshake, nine tools, policy discovery and read-only inspection."""
 import asyncio
 import json
 import sys
@@ -36,10 +36,10 @@ async def main():
         await send({'id': 2, 'method': 'tools/list', 'params': {}})
         tools = (await receive(2))['tools']
         expected = {'knowledge_search', 'flowforge_list_workflows', 'flowforge_list_tasks', 'flowforge_get_run', 'flowforge_run',
-                    'homelab_inspect_service', 'homelab_get_logs', 'homelab_restart_service'}
+                    'homelab_list_services', 'homelab_inspect_service', 'homelab_get_logs', 'homelab_restart_service'}
         if {tool['name'] for tool in tools} != expected:
             raise RuntimeError('Unexpected MCP tool inventory')
-        print('PASS: MCP handshake and eight expected tools', flush=True)
+        print('PASS: MCP handshake and nine expected tools', flush=True)
         schema = next(tool['inputSchema'] for tool in tools if tool['name'] == 'flowforge_run')
         task = schema['properties']['input']
         if '$ref' in task:
@@ -50,12 +50,30 @@ async def main():
         assert any(item.get('maxLength') == 5000 for item in context.get('anyOf', [context]))
         print('PASS: actual MCP schema exposes bounded input.context and rejects unknown input fields', flush=True)
         await send({'id': 3, 'method': 'tools/call', 'params': {
+            'name': 'homelab_list_services', 'arguments': {
+                'session_id': 'deployment-smoke-test',
+                'user_request': 'Verify configured tool coverage through MCP and gateway policy',
+            },
+        }})
+        result = await receive(3)
+        if result.get('isError'):
+            raise RuntimeError('MCP discovery returned an error')
+        payload = json.loads(next(item['text'] for item in result['content'] if item['type'] == 'text'))
+        if not payload.get('success'):
+            raise RuntimeError('Gateway discovery failed: ' + str(payload.get('error', 'UNKNOWN')))
+        coverage = payload['data']
+        assert set(coverage) == {'coverage', 'services'}
+        assert coverage['coverage'] == 'configured_tool_coverage'
+        assert all(set(item) == {'service', 'restart'} and
+                   item['restart'] in {'AUTO_SAFE', 'CONFIRM', 'DENY'} for item in coverage['services'])
+        print('PASS: policy-backed configured tool coverage; no runtime health claims', flush=True)
+        await send({'id': 4, 'method': 'tools/call', 'params': {
             'name': 'homelab_inspect_service', 'arguments': {
                 'service': 'vaultwarden', 'session_id': 'deployment-smoke-test',
                 'user_request': 'Verify read-only Vaultwarden inspection through MCP, gateway and broker',
             },
         }})
-        result = await receive(3)
+        result = await receive(4)
         if result.get('isError'):
             raise RuntimeError('MCP tool returned an error')
         payload = json.loads(next(item['text'] for item in result['content'] if item['type'] == 'text'))

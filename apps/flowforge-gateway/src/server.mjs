@@ -101,6 +101,11 @@ export function createGateway({env, policy, execute = executor(env, policy), sta
       else if (req.method === 'GET' && path === '/flowforge/tasks') { tool = 'flowforge.listTasks'; args = {}; }
       else if (req.method === 'GET' && /^\/flowforge\/runs\/[0-9a-f-]{36}$/.test(path)) { tool = 'flowforge.getRun'; args = {run_id: path.split('/').at(-1)}; }
       else if (req.method === 'GET' && path === '/flowforge/workflows') { tool = 'flowforge.listWorkflows'; args = {}; }
+      else if (path === '/homelab/services') {
+        check(req.method === 'GET', 'METHOD_NOT_ALLOWED', 405);
+        check(!url.search, 'INVALID_INPUT');
+        tool = 'homelab.listServices'; args = {};
+      }
       else {
         const match = path.match(/^\/homelab\/services\/([a-z0-9_-]+)(?:\/(logs|restart))?$/); check(match, 'NOT_FOUND', 404);
         check(match[2] === 'restart' ? req.method === 'POST' : req.method === 'GET', 'METHOD_NOT_ALLOWED', 405);

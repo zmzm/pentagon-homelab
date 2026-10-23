@@ -102,6 +102,17 @@ def flowforge_run(workflow: str, session_id: str, user_request: str,
 
 
 @mcp.tool()
+def homelab_list_services(session_id: str, user_request: str):
+    """Discover configured tool coverage: service identifiers and restart permission levels.
+
+    This reads gateway policy only, not running services or health. Restart levels
+    are informational; existing authorization and confirmation checks still apply.
+    Discovery must not choose a target for an ambiguous user request.
+    """
+    return call("/homelab/services", session_id, user_request)
+
+
+@mcp.tool()
 def homelab_inspect_service(service: str, session_id: str, user_request: str):
     """Inspect an allowlisted Docker service. Returns status, health and restart count."""
     return call(f"/homelab/services/{urllib.parse.quote(service, safe='')}", session_id, user_request)

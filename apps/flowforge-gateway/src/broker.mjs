@@ -28,7 +28,7 @@ export function createBroker(env, policy, request = dockerRequest) {
     try {
       authenticate(req, env.BROKER_TOKEN); check(req.url === '/execute' && req.method === 'POST', 'NOT_FOUND', 404);
       const input = await body(req); object(input, ['tool', 'arguments']);
-      check(input.tool?.startsWith('homelab.'), 'UNKNOWN_TOOL', 404); const permission = operation(input.tool, input.arguments, policy);
+      check(['homelab.inspectService', 'homelab.getLogs', 'homelab.restartService'].includes(input.tool), 'UNKNOWN_TOOL', 404); const permission = operation(input.tool, input.arguments, policy);
       check(permission !== 'DENY', 'POLICY_DENIED', 403);
       // Only the authenticated gateway is attached to this network and holds this credential.
       const name = encodeURIComponent(policy.services[input.arguments.service].container);

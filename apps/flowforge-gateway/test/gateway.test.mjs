@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createGateway } from '../src/server.mjs';
 import { createBroker, decodeLogs } from '../src/broker.mjs';
@@ -12,13 +12,13 @@ const policy = {
   services: {vaultwarden: {container: 'vaultwarden', restart: 'CONFIRM'}, homepage: {container: 'homepage', restart: 'AUTO_SAFE'}, caddy: {container: 'caddy', restart: 'DENY'}},
   workflows: {'fixture-workflow': {permission: 'CONFIRM'}}, projects: {mentory: '/vaults/coding'},
 };
-async function fixture(t, execute) {
+async function fixture(t, execute, configuredPolicy = policy) {
   const state = mkdtempSync(`${tmpdir()}/gateway-test-`);
-  const {server} = createGateway({env, policy, state, execute});
+  const {server} = createGateway({env, policy: configuredPolicy, state, execute});
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => server.close(resolve)); rmSync(state, {recursive: true}); });
-  const request = async (path, {admin = false, method = 'GET', data, approval, token} = {}) => {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, {method, headers: {authorization: `Bearer ${token || (admin ? env.APPROVER_TOKEN : env.GATEWAY_TOKEN)}`, 'content-type': 'application/json', 'x-session-id': 'session-1', 'x-user-request': encodeURIComponent('Sprawdź usługę'), ...(approval ? {'x-approval-id': approval} : {})}, body: data === undefined ? undefined : JSON.stringify(data)});
+  const request = async (path, {admin = false, method = 'GET', data, approval, token, headers = {}} = {}) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, {method, headers: {authorization: `Bearer ${token ?? (admin ? env.APPROVER_TOKEN : env.GATEWAY_TOKEN)}`, 'content-type': 'application/json', 'x-session-id': 'session-1', 'x-user-request': encodeURIComponent('Sprawdź usługę'), ...(approval ? {'x-approval-id': approval} : {}), ...headers}, body: data === undefined ? undefined : JSON.stringify(data)});
     return {status: response.status, data: await response.json()};
   };
   return {request, state};
@@ -30,6 +30,56 @@ test('unauthorized access and agent self-approval cannot call a tool', async t =
   assert.equal((await request('/approvals')).status, 401);
   assert.equal((await request('/homelab/services/missing')).status, 403);
   assert.equal((await request('/homelab/services/caddy/restart', {method: 'POST', data: {}})).status, 403);
+  assert.equal(calls, 0);
+});
+
+test('service discovery returns only configured policy coverage without a broker or Docker backend', async t => {
+  const configuredPolicy = {
+    services: {
+      custom_app: {container: 'private-container-name', restart: 'CONFIRM'},
+      blocked_app: {container: 'another-private-container', restart: 'DENY'},
+      safe_app: {container: 'private-safe-container', restart: 'AUTO_SAFE'},
+    },
+    workflows: {'private-workflow': {permission: 'CONFIRM'}},
+    projects: {default: '/vaults/private-host-path'},
+  };
+  // The real executor has no broker URL or token. Any upstream call would fail.
+  const {request, state} = await fixture(t, undefined, configuredPolicy);
+  const expected = {
+    coverage: 'configured_tool_coverage',
+    services: [
+      {service: 'custom_app', restart: 'CONFIRM'},
+      {service: 'blocked_app', restart: 'DENY'},
+      {service: 'safe_app', restart: 'AUTO_SAFE'},
+    ],
+  };
+  const result = await request('/homelab/services');
+  assert.equal(result.status, 200);
+  // Exact allowlist excludes containers, paths, credentials, environment and live state.
+  assert.deepEqual(result.data, {success: true, data: expected});
+  assert.deepEqual(readdirSync(`${state}/approvals`), []);
+  assert.ok(readFileSync(`${state}/audit.jsonl`, 'utf8').includes('"tool":"homelab.listServices"'));
+  assert.equal(operation('homelab.listServices', {}, configuredPolicy), 'READ');
+  assert.throws(() => operation('homelab.listServices', {service: 'custom_app'}, configuredPolicy), /INVALID_INPUT/);
+  assert.deepEqual(await executor({}, {...configuredPolicy, services: {}})('homelab.listServices', {}),
+    {coverage: 'configured_tool_coverage', services: []});
+  // Returned restart levels neither grant authorization nor bypass confirmation.
+  assert.equal((await request('/homelab/services/blocked_app/restart', {method: 'POST', data: {}})).status, 403);
+  assert.equal((await request('/homelab/services/custom_app/restart', {method: 'POST', data: {}})).data.error, 'APPROVAL_REQUIRED');
+});
+
+test('service discovery requires gateway authentication and audit context and rejects inputs', async t => {
+  let calls = 0;
+  const {request} = await fixture(t, async () => { calls++; return {}; });
+  for (const token of ['', 'invalid', env.APPROVER_TOKEN, env.BROKER_TOKEN]) {
+    assert.equal((await request('/homelab/services', {token})).status, 401);
+  }
+  assert.equal((await request('/homelab/services', {headers: {authorization: ''}})).status, 401);
+  for (const header of ['x-session-id', 'x-user-request']) {
+    assert.equal((await request('/homelab/services', {headers: {[header]: ''}})).status, 400);
+  }
+  assert.equal((await request('/homelab/services?service=custom_app')).status, 400);
+  assert.equal((await request('/homelab/services', {method: 'POST', data: {}})).status, 405);
   assert.equal(calls, 0);
 });
 
@@ -119,6 +169,7 @@ test('broker limits Docker API surface, strips inspect secrets and redacts confi
   assert.equal((await call('homelab.restartService', {service: 'caddy'})).status, 403);
   assert.equal((await call('homelab.inspectService', {service: '../etc'})).status, 403);
   assert.equal((await call('flowforge.run', {workflow: 'shell'})).status, 404);
+  assert.equal((await call('homelab.listServices', {})).status, 404);
   assert.equal(seen.length, 3);
 });
 

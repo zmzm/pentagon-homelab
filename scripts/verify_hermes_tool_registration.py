@@ -52,7 +52,7 @@ def verify_selection(config, personal, platform):
         available_toolsets={'skills'})
     if 'homelab-service-diagnosis' not in index:
         raise RuntimeError(f'{platform}: curated skill absent from native system-prompt index')
-    print(f'PASS: {platform} effective schemas include native skill reads and all eight personal MCP tools; prohibited tools absent')
+    print(f'PASS: {platform} effective schemas include native skill reads and all nine personal MCP tools; prohibited tools absent')
 
 
 def main():
@@ -60,7 +60,7 @@ def main():
     expected = {
         'knowledge_search', 'flowforge_list_workflows',
         'flowforge_list_tasks', 'flowforge_get_run', 'flowforge_run', 'homelab_inspect_service',
-        'homelab_get_logs', 'homelab_restart_service',
+        'homelab_list_services', 'homelab_get_logs', 'homelab_restart_service',
     }
     try:
         registered = set(register_mcp_servers(config['mcp_servers']))
@@ -72,7 +72,7 @@ def main():
             raise RuntimeError('Missing tools in Hermes registration: ' + ', '.join(sorted(missing)))
         if raw_names != expected:
             raise RuntimeError('Unexpected personal MCP inventory')
-        print('PASS: Hermes registered all eight personal MCP tools through its filtered subprocess environment')
+        print('PASS: Hermes registered all nine personal MCP tools through its filtered subprocess environment')
         for platform in ('cli', 'matrix', 'cron'):
             verify_selection(config, personal, platform)
         assert config['skills']['inline_shell'] is False

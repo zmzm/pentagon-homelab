@@ -2,8 +2,10 @@
 import copy
 import json
 import unittest
+import urllib.parse
+from unittest.mock import Mock, mock_open, patch
 
-from verify_hermes_skills import check_behavior
+from verify_hermes_skills import READ_GUARD, check_behavior
 
 
 def message(calls):
@@ -84,6 +86,47 @@ class DeferredCallsTest(unittest.TestCase):
         ])
         with self.assertRaisesRegex(RuntimeError, 'did not end with a clarification question'):
             check_behavior(observation, {'ambiguous': 'diagnose'})
+
+    def test_unknown_target_discovers_coverage_without_selecting_a_service(self):
+        for prefix in ('mcp__personal__', 'mcp_personal_'):
+            observation = fixture()
+            messages = observation['sessions'][0]['messages']
+            messages[1] = message([
+                {'name': 'skill_view', 'arguments': {'name': 'homelab-service-diagnosis'}},
+                {'name': 'tool_call', 'arguments': {'calls': [
+                    {'name': prefix + 'homelab_list_services', 'arguments': {}},
+                ]}},
+            ])
+            messages[-1]['content'] = 'This is configured tool coverage. Which service should I diagnose?'
+            case = check_behavior(observation, {'coverage': 'diagnose'})[0]
+            self.assertEqual(case['calls'][-1]['name'], prefix + 'homelab_list_services')
+            messages.insert(2, message([{'name': prefix + 'homelab_inspect_service',
+                                         'arguments': {'service': 'vaultwarden'}}]))
+            with self.assertRaisesRegex(RuntimeError, 'Discovery selected a target'):
+                check_behavior(observation, {'coverage': 'diagnose'})
+
+
+class ReadGuardTest(unittest.TestCase):
+    def test_discovery_is_allowed_without_filters_payload_or_approval(self):
+        original = Mock(return_value={'success': True})
+        namespace = {'call': original, 'urllib': urllib, 'json': json}
+        exec(READ_GUARD, namespace)
+        # Capture the validation-only trace in memory; never touch /opt/data.
+        with patch('pathlib.Path') as path:
+            path.return_value.open = mock_open()
+            guarded = namespace['call']
+            self.assertEqual(guarded('/homelab/services', 'session', 'coverage'), {'success': True})
+            original.assert_called_once_with('/homelab/services', 'session', 'coverage', None, None)
+            original.reset_mock()
+            for route, payload, approval in (
+                ('/homelab/services?command=restart', None, None),
+                ('/homelab/services', {}, None),
+                ('/homelab/services', None, 'approval-id'),
+                ('/homelab/services/custom_app/restart', {}, None),
+            ):
+                self.assertEqual(guarded(route, 'session', 'coverage', payload, approval)['error'],
+                                 'VALIDATION_READ_ONLY_GUARD')
+            original.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -48,6 +48,6 @@ mcp_servers:
       GATEWAY_TOKEN: ${GATEWAY_TOKEN}
     timeout: 40
     tools:
-      include: [knowledge_search, flowforge_list_workflows, flowforge_list_tasks, flowforge_get_run, flowforge_run, homelab_inspect_service, homelab_get_logs, homelab_restart_service]
+      include: [knowledge_search, flowforge_list_workflows, flowforge_list_tasks, flowforge_get_run, flowforge_run, homelab_list_services, homelab_inspect_service, homelab_get_logs, homelab_restart_service]
       resources: false
       prompts: false

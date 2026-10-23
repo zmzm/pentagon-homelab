@@ -12,7 +12,14 @@ npm test
 
 `src/server.mjs` enforces authentication, validation, permission policy, durable approvals,
 audit and metrics. `src/operations.mjs` delegates knowledge to the existing CLI and workflows
-to a configured upstream API. `src/project-vault.mjs` adapts completed Mentory records
+to a configured upstream API. Its READ `homelab.listServices` operation, exposed
+as GET `/homelab/services` and MCP `homelab_list_services`, returns only service
+identifiers and restart levels from `policy.services`, labelled as configured
+tool coverage. It makes no Docker/broker call and makes no runtime health claim.
+Restart authorization and confirmation checks remain authoritative.
+See [service discovery and rollout](../hermes/README.md#service-discovery-and-rollout)
+for the response and future operator deployment steps.
+`src/project-vault.mjs` adapts completed Mentory records
 to the existing router format and maps citations back to original sources; it does not rank
 or search documents. `src/homelab-vault.mjs` projects only allowlisted homelab operational
 docs and separately labelled historical incidents using the same snapshot/citation support.
