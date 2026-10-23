@@ -100,6 +100,44 @@ docker compose up -d --force-recreate
 
 ---
 
+# Personal Agent Discovery and Diagnosis
+
+The Hermes personal-agent stack runs from `apps/hermes`. Use read-only
+`homelab_list_services` to discover configured tool coverage when a service
+identifier is unknown or available coverage is needed. It reads gateway
+`policy.services`, returning only identifiers and restart levels; it does not
+query Docker or establish running state, health or reachability. Restart levels
+are informational and do not bypass authorization or confirmation. A genuinely
+ambiguous request still needs an actual user choice before inspection; never
+substitute a configured service silently.
+
+From `apps/hermes`, verify the deployed native tool selection and read-only MCP
+path without sending a Matrix message or making a model request:
+
+```bash
+docker compose exec -T hermes python - < ../../scripts/verify_hermes_tool_registration.py
+docker compose exec -T hermes python - < ../../scripts/verify_hermes_mcp.py
+```
+
+The first check verifies nine personal MCP tools for CLI, Matrix and cron plus
+the curated diagnosis skill. The second reads policy coverage and performs the
+existing Vaultwarden inspection; it does not request a restart or approval.
+See [API, authentication and targeted rollout steps](apps/hermes/README.md#service-discovery-and-rollout)
+and [the verified deployment record](reports/2026-10-22-homelab-service-discovery.md).
+
+Saved conversations can retain earlier instructions despite a Hermes restart.
+Use a fresh user-controlled session when testing revised diagnosis behavior:
+send standalone `!new`, choose **Approve Once** if prompted, and wait for its
+confirmation. The operator must not confirm or send user events on the user's
+behalf. This native session reset is separate from gateway restart approvals.
+
+After documentation changes are committed, refresh and check the allowlisted
+homelab knowledge snapshot using [the documented host commands](apps/hermes/README.md#homelab-documentation).
+Documentation-only refreshes need no service restart. Keep service policies,
+credentials, monitoring and existing production schedules unchanged.
+
+---
+
 # Ansible
 
 Ansible is used as the migration path toward repeatable host setup and service deployment.
@@ -132,11 +170,13 @@ Current local secret files:
 apps/matrix/.env
 apps/pihole-adapter/.env
 apps/portainer/.env
+apps/hermes/.env
 
 Tracked example files document required variables:
 
 apps/matrix/.env.example
 apps/portainer/.env.example
+apps/hermes/.env.example
 
 When starting a service, run Docker Compose from that service directory so the local `.env` file is loaded automatically.
 

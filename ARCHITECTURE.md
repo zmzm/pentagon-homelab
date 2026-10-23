@@ -39,6 +39,32 @@ Coturn and its configuration were removed on 2026-10-11. Synapse has no configur
 
 ---
 
+# Personal Agent
+
+Hermes uses GLM and Matrix through outbound connections. CLI, Matrix and cron
+share an explicit personal MCP tool selection:
+
+```text
+Hermes → MCP stdio bridge → gateway → Knowledge Router / FlowForge planning API
+                                  └→ isolated Docker broker (inspect/log/restart)
+```
+
+Service discovery stops at the gateway: `homelab_list_services` reads only
+`policy.services` and returns configured identifiers and restart levels. It does
+not contact the broker or Docker and makes no claim about running or healthy
+services. Restart levels are informational; the existing gateway policy and
+trusted approval process still decide whether a requested restart may execute.
+The diagnosis skill discovers coverage when needed and requires the user to
+resolve genuinely ambiguous targets.
+
+The stack is deployed through `apps/hermes/docker-compose.yml` without published
+host ports. Only the broker has a Docker socket; Hermes cannot reach its
+operations network, and the gateway has no internet egress. See
+[components and boundaries](apps/hermes/README.md#components-and-boundaries) and
+[service discovery deployment](reports/2026-10-22-homelab-service-discovery.md).
+
+---
+
 # DNS Architecture
 
 ```text
@@ -66,6 +92,9 @@ homelab/
 │   ├── backrest
 │   ├── caddy
 │   ├── cloudflared
+│   ├── flowforge
+│   ├── flowforge-gateway
+│   ├── hermes
 │   ├── homepage
 │   ├── matrix
 │   ├── pihole

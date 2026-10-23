@@ -10,7 +10,8 @@ monitoring and existing application services remain independent.
 | Capability | Implementation and verification |
 | --- | --- |
 | Matrix + GLM | Running; a real authorized Matrix request inspected Vaultwarden, read logs and returned an answer |
-| Personal MCP tools | Hermes native registration and Matrix filtering tested; read-only Vaultwarden tool chain tested |
+| Personal MCP tools | Nine tools verified through native registration and effective CLI/Matrix/cron selections; read-only discovery and Vaultwarden tool chain tested |
+| Service discovery | Deployed 2026-10-22: policy-backed configured tool coverage, with identifiers and informational restart levels; no Docker query or runtime health claim |
 | Permissions | READ/AUTO_SAFE/CONFIRM/DENY; exact-action, durable single-use approvals; no model approver credential |
 | Matrix approvals | Separate trusted listener posts exact actions and accepts commands or seeded reactions only from allowed Matrix users in the configured room; security tests pass |
 | Knowledge Router | Existing router searches coding guidance, completed Mentory task records/history, and a separate allowlisted homelab documentation snapshot; homelab deployment/refresh is explicit |
@@ -133,8 +134,11 @@ the skill and SOUL explicitly prohibit invoking them or creating approval
 requests during diagnosis. This is a procedural boundary, not a new gateway
 permission class or a hard per-request removal of write tools.
 
-The procedure clarifies ambiguous services, inspects state, reads a bounded log
-tail when useful, and searches `project="homelab"`. Its English reply leads with
+The procedure discovers configured coverage when a target identifier is unknown
+or coverage is needed, clarifies genuinely ambiguous services, inspects state,
+reads a bounded log tail when useful, and searches `project="homelab"`. Discovery
+cannot choose a target on the user's behalf; restart levels do not grant approval.
+Its English reply leads with
 a short plain-language assessment, distinguishes observed facts from documented
 guidance and labelled hypotheses, and explains the useful next step and material
 verification limits. Routine replies use readable source labels; exact file/line
@@ -255,10 +259,11 @@ previous evidence/report is retained locally under
 The harness was corrected to give its tmpfs home private UID/GID 10000 ownership,
 read that home as the same unprivileged observer, retain failed CLI output
 privately, and validate underlying calls inside native `tool_call` batches.
-Six regression tests cover direct/deferred calls, nested writes, unanswered
-clarification, missing final questions and blocked HTTP attempts. The latest
-live command exited successfully with complete native observations and both
-final answers in private evidence; no trace recovery was needed. See
+Eight regression tests cover direct/deferred calls, nested writes, unanswered
+clarification, missing final questions, coverage discovery without target
+selection, and the validation HTTP guard. Before the discovery addition, the
+latest live command exited successfully with complete native observations and
+both final answers in private evidence; no trace recovery was needed. See
 `reports/hermes-skills-acceptance.md` locally. This is one observed passing run,
 not a guarantee of all future model behavior; deployment and end-to-end Matrix
 acceptance remain separate steps.
@@ -357,6 +362,14 @@ Long planning jobs acknowledge promptly and expose status. No automatic write re
 
 ### Service discovery and rollout
 
+Deployed and verified on 2026-10-22. The gateway was rebuilt and recreated, then
+Hermes was recreated after gateway health passed. All nine native MCP tools and
+effective CLI/Matrix/cron selections passed verification, as did a real MCP
+discovery call and the existing read-only Vaultwarden inspection. Other
+containers and the mounted policy were unchanged. See
+[the deployment record and verification limits](../../reports/2026-10-22-homelab-service-discovery.md).
+New live model behavior and end-to-end Matrix discovery have not been tested.
+
 `homelab_list_services(session_id, user_request)` in the existing personal MCP
 bridge calls GET `/homelab/services`. The shared `mcp-personal` group selects it
 for CLI, Matrix and cron through the explicit MCP include list. It returns:
@@ -383,8 +396,8 @@ personal MCP calls. When discovery cannot resolve a target the user has chosen,
 or the user has not chosen one, it asks and waits; it never substitutes a
 configured service or chooses one merely because it is the only plausible entry.
 
-This change is not deployed by the source update or fixture tests. After review,
-the operator should run the offline installed-image registration check above,
+For subsequent rollouts, source updates and fixture tests alone do not deploy
+the change. After review, run the offline installed-image registration check above,
 refresh/check the homelab knowledge projection because this README changed,
 and deploy from `apps/hermes` using the existing private `.env` and policy:
 
@@ -403,7 +416,8 @@ docker compose exec -T hermes python - < ../../scripts/verify_hermes_tool_regist
 docker compose exec -T hermes python - < ../../scripts/verify_hermes_mcp.py
 ```
 
-These are future operator steps, not actions performed as part of this change.
+These commands are retained for subsequent operator rollouts; the deployment
+record describes the completed rollout and exact checks performed.
 No policy edit, new credential, broker restart or restart of Matrix or the
 inventoried applications is needed for discovery. Registration verification expects
 nine personal tools and checks effective CLI, Matrix and cron selections. The

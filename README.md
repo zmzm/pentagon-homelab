@@ -213,6 +213,15 @@ Coturn was removed on 2026-10-11 because the home connection is behind CGNAT and
 
 [Hermes personal runtime](apps/hermes/README.md) runs through GLM and Matrix with a constrained gateway, isolated Docker broker, trusted Matrix approvals and a planning-only FlowForge API. Matrix service inspection and scheduled delivery are verified; live two-stage planning saved both plan files and delivered all result chunks to Matrix. Live acceptance reports contain private project details and are kept locally outside Git. Existing production workflows and monitoring remain independent.
 
+Read-only `homelab_list_services` discovers configured tool coverage from the
+gateway policy for CLI, Matrix and cron. It returns service identifiers and
+informational restart levels without querying Docker or exposing container
+configuration. Coverage does not establish runtime health, and ambiguous targets
+still require the user's choice. The gateway and Hermes rollout and read-only
+MCP checks passed on 2026-10-22; other containers and service permissions were
+unchanged. See [the deployment record](reports/2026-10-22-homelab-service-discovery.md)
+and [API and rollout instructions](apps/hermes/README.md#service-discovery-and-rollout).
+
 ## Automation
 
 ### Watchtower

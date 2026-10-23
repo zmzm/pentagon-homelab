@@ -64,6 +64,29 @@ A host systemd timer, `homelab-monitor.timer`, runs `scripts/monitor.py` every f
 
 ---
 
+# Personal Agent
+
+These components share `apps/hermes/docker-compose.yml` and publish no host
+ports. Their source and persistent data are separate from the core services.
+
+| Component | Purpose | Source | Data location |
+| --- | --- | --- | --- |
+| Hermes | Matrix conversation, CLI and conversational schedules | `apps/hermes` | `data/hermes` |
+| FlowForge gateway | Authenticated tool API, policy discovery, audit and approvals | `apps/flowforge-gateway` | `data/flowforge-gateway` |
+| Homelab broker | Allowlisted Docker inspection, logs and restart execution | `apps/flowforge-gateway` | none |
+| Matrix approval listener | Trusted user approval verification and exact-action execution | `apps/flowforge-gateway` | `data/matrix-approvals` |
+| FlowForge planning API | Planning around the existing workflow runner | `apps/flowforge` | `data/flowforge-api` |
+
+`homelab_list_services` reports configured tool coverage from gateway policy,
+which is a subset of the services documented here, not a live service or health
+inventory. It returns identifiers and informational restart levels without
+Docker configuration, secrets, host paths or environment variables. Existing
+restart authorization and confirmation remain authoritative. See
+[the API and operating guide](apps/hermes/README.md#service-discovery-and-rollout)
+and [deployment verification](reports/2026-10-22-homelab-service-discovery.md).
+
+---
+
 # Matrix Calling Status
 
 As of 2026-10-11, coturn is removed from Compose, local runtime configuration, and the Ansible app list. Synapse has no configured STUN/TURN endpoints. No MatrixRTC/LiveKit backend is deployed.
@@ -101,12 +124,14 @@ Real `.env` files are ignored by Git. Tracked example files:
 |-------|-------|
 | `apps/matrix/.env.example` | `MATRIX_POSTGRES_PASSWORD` |
 | `apps/portainer/.env.example` | `PORTAINER_HOMEPAGE_WIDGET_KEY` |
+| `apps/hermes/.env.example` | Provider/Matrix settings and distinct gateway, approver, broker and FlowForge credentials; see the [Hermes configuration guide](apps/hermes/README.md#configuration-and-deployment) |
 
 Existing ignored local env files:
 
 - `apps/matrix/.env`
 - `apps/pihole-adapter/.env`
 - `apps/portainer/.env`
+- `apps/hermes/.env`
 
 ---
 
@@ -118,4 +143,4 @@ Existing ignored local env files:
 - Backup repositories are stored under `backups/`.
 - Local service domains are routed through Caddy; public Matrix access uses Cloudflare Tunnel.
 
-All eleven Compose projects have Ansible deployment playbooks, including service-specific recovery prerequisites and post-deployment checks. Monitoring and database backup timers are managed by `ansible/scheduled-jobs.yml`. See [Ansible deployment and recovery](ansible/README.md).
+The eleven core Compose projects have Ansible deployment playbooks, including service-specific recovery prerequisites and post-deployment checks. The personal-agent stack uses the separate deployment procedure in the Hermes guide. Monitoring and database backup timers are managed by `ansible/scheduled-jobs.yml`. See [Ansible deployment and recovery](ansible/README.md).
