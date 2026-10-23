@@ -29,6 +29,11 @@ Refresh from the repo root with `scripts/build_mentory_knowledge.mjs` or
 `scripts/build_homelab_knowledge.mjs`; the latter supports a read-only `--check` for freshness.
 See the Hermes guide for commands and snapshot metadata. `src/broker.mjs` is the only component with a Docker socket;
 it supports allowlisted inspect/log/restart operations only.
+Approved restarts send one Docker write, then inspect container state for up to ten
+seconds. Results distinguish healthy, running without a health check, unhealthy/stopped,
+starting at the deadline, unavailable verification, and an uncertain restart request.
+Verification never retries the write. See [restart verification and rollout](../hermes/README.md#restart-verification-and-rollout)
+for the structured response, request budgets and deployment steps.
 
 Start with `policy.example.json`, an empty workflow allowlist, and explicit service policies.
 No runtime, planner, general memory, scheduler or business pipeline is implemented here.

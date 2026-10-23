@@ -323,6 +323,71 @@ docker compose exec -e OPERATOR=your-name flowforge-gateway node /integration/op
 The fallback marks approval only; Matrix-approved requests are executed automatically by
 the listener. Run one gateway and one listener replica; file state is not a distributed lock.
 
+## Restart verification and rollout
+
+An approved service restart consumes the same exact-action approval durably before
+execution. The broker sends **one** Docker `POST /containers/:name/restart?t=10`.
+Only after Docker acknowledges that request does it poll read-only container inspect.
+Verification never sends another restart, including when inspection fails or times out.
+The listener reports the outcome in concise English in the original Matrix room.
+
+The Docker request has an absolute 15-second deadline, including response headers and
+body. Verification then has a separate 10-second window, with inspect requests capped at
+2 seconds or the remaining window, whichever is smaller, and 500 ms between starting
+observations. The maximum nested operation budget is 25 seconds, leaving headroom inside
+the gateway's 30-second broker request, the relay/MCP's 35-second requests and Hermes'
+40-second tool budget. Synchronous execution therefore fits; no asynchronous execution
+endpoint or extra execution retry is introduced. Slow health checks can outlast this window.
+
+Example gateway result (also persisted in the approval's `outcome`):
+
+```json
+{"success":true,"data":{"service":"example-service","restarted":true,"restart":{"status":"acknowledged"},"verification":{"source":"docker","windowMs":10000,"elapsedMs":500,"attempts":2,"status":"healthy","observation":{"status":"running","running":true,"health":"healthy"}}}}
+```
+
+`verification.status` distinguishes:
+
+| Status | Observed result |
+| --- | --- |
+| `healthy` | Container is running and Docker reports healthy. |
+| `running_no_healthcheck` | Container is running with no configured health check (including explicitly disabled checks). |
+| `unhealthy` | Container is running but Docker reports unhealthy. |
+| `stopped` | Container is stopped or not in the running state, including paused containers. |
+| `starting_timeout` | Docker still reported starting when the verification deadline expired. |
+| `unavailable` | Inspect failed, timed out, returned invalid state, or arrived after the deadline. |
+| `not_attempted` | The restart was not acknowledged, so verification was not attempted. |
+
+Only a starting state is polled again. Healthy, missing-check, unhealthy and stopped
+observations end verification immediately. An inspection error ends it as unavailable;
+it does not reuse an older starting observation to claim a current state. The response
+includes only selected state fields, never health-check output, environment or commands.
+
+`success:true`, `restarted:true` and approval `DONE` mean Docker acknowledged the restart;
+always read `verification.status` separately. They do not mean the application recovered
+or is externally reachable. No network or application probe is performed here.
+
+If Docker's acknowledgment or the broker response is lost, the gateway returns
+`success:false`, `error:"RESTART_UNCERTAIN"`, `restarted:null`,
+`restart.status:"uncertain"` and `verification.status:"not_attempted"`. The consumed
+approval is stored as `UNCERTAIN`. A timeout is not evidence that Docker did nothing.
+Neither gateway nor relay retries execution. A process crash can leave `CONSUMED`;
+the existing relay also reports that as uncertain and never replays it. Inspect safely
+before deciding on a separate, explicitly authorized action.
+
+This change is tested with fake Docker, broker and Matrix backends only. Deployment is
+a separate operator action; no service restart or rollout is part of these tests. Run
+the gateway test suite with Node 24+ first. Before a later rollout, let in-flight approved
+requests finish and preserve both gateway and relay state directories. From `apps/hermes`:
+
+```bash
+docker compose build homelab-broker flowforge-gateway matrix-approvals
+docker compose up -d --no-deps homelab-broker flowforge-gateway matrix-approvals
+docker compose ps homelab-broker flowforge-gateway matrix-approvals
+```
+
+Keep one gateway and one relay replica. Check their health and logs without submitting
+a restart request. Do not replay consumed or uncertain approvals to validate a rollout.
+
 ## Stable tool API
 
 Except `/health`, endpoints require the gateway bearer credential. Tool calls also require

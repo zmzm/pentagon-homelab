@@ -36,6 +36,24 @@ export function messageChunks(text) {
   return chunks;
 }
 
+function restartResultText(id, record) {
+  const data = record.outcome?.data;
+  const service = record.arguments.service;
+  if (record.status === 'UNCERTAIN' || data?.restart?.status === 'uncertain') {
+    return `Approval ${id}: ${service} restart outcome is uncertain. Inspect safely; do not retry automatically.`;
+  }
+  const states = {
+    healthy: 'Container is running and Docker reports healthy.',
+    running_no_healthcheck: 'Container is running; no health check is configured.',
+    unhealthy: 'Container is running but unhealthy.',
+    stopped: 'Container is stopped or is not in the running state.',
+    starting_timeout: 'Container was still starting when the verification deadline expired.',
+    unavailable: 'Container verification is unavailable.',
+  };
+  const state = states[data.verification?.status] || states.unavailable;
+  return `Approval ${id}: Docker acknowledged the ${service} restart. ${state} Docker state only; application recovery and external reachability were not checked.`;
+}
+
 export class ApprovalRelay {
   constructor({room, users, matrix, gateway, state, save, now = Date.now, log = entry => process.stdout.write(JSON.stringify(entry) + '\n')}) {
     Object.assign(this, {room, users, matrix, gateway, state, save, now, log});
@@ -94,6 +112,8 @@ export class ApprovalRelay {
   async finish(id, prompt, record) {
     let text;
     if (record.status === 'REJECTED') text = `Rejected ${id}. No action was executed.`;
+    else if (record.tool === 'homelab.restartService' &&
+      (record.status === 'UNCERTAIN' || record.outcome?.data?.restart)) text = restartResultText(id, record);
     else if (['DONE', 'FAILED'].includes(record.status)) text = `Approval ${id}: ${record.status}\n${JSON.stringify(record.outcome).slice(0, 10000)}`;
     else if (record.expiresAt <= this.now()) text = `Approval ${id} expired. No new execution was attempted.`;
     else text = `Approval ${id}: execution outcome is uncertain (${record.status}). Inspect safely; do not retry the action automatically.`;

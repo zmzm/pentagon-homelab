@@ -3,13 +3,16 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { authenticate, body, bounded, check, Failure, object, send, redact } from './common.mjs';
 import { operation, validatePolicy } from './operations.mjs';
+import { restartService } from './restart.mjs';
 
-export function dockerRequest(path, method = 'GET', socketPath = '/var/run/docker.sock') {
+export function dockerRequest(path, method = 'GET', {socketPath = '/var/run/docker.sock', timeoutMs = 15000} = {}) {
   return new Promise((resolve, reject) => {
-    const req = http.request({socketPath, path, method, timeout: 15000}, async res => {
-      try { const data = await bounded(res, 131072); check(res.statusCode < 300, res.statusCode === 404 ? 'CONTAINER_NOT_FOUND' : 'DOCKER_FAILED', 502); resolve(data); } catch (e) { reject(e); }
+    const req = http.request({socketPath, path, method}, async res => {
+      try { const data = await bounded(res, 131072); check(res.statusCode >= 200 && res.statusCode < 300, res.statusCode === 404 ? 'CONTAINER_NOT_FOUND' : 'DOCKER_FAILED', 502); resolve(data); } catch (e) { req.destroy(); reject(e); }
     });
-    req.on('timeout', () => req.destroy(new Failure('DOCKER_TIMEOUT', 504)));
+    // Absolute wall-time budget, including a stalled or trickling response body.
+    const timer = setTimeout(() => req.destroy(new Failure('DOCKER_TIMEOUT', 504)), timeoutMs);
+    req.on('close', () => clearTimeout(timer));
     req.on('error', reject); req.end();
   });
 }
@@ -22,7 +25,7 @@ export function decodeLogs(data, tty) {
   }
   check(offset === data.length, 'INVALID_DOCKER_LOGS', 502); return Buffer.concat(chunks).toString('utf8');
 }
-export function createBroker(env, policy, request = dockerRequest) {
+export function createBroker(env, policy, request = dockerRequest, timing) {
   validatePolicy(policy); check(env.BROKER_TOKEN?.length >= 32, 'INVALID_AUTH_CONFIG');
   return http.createServer(async (req, res) => {
     try {
@@ -34,7 +37,7 @@ export function createBroker(env, policy, request = dockerRequest) {
       const name = encodeURIComponent(policy.services[input.arguments.service].container);
       const prefix = `/containers/${name}`;
       if (input.tool === 'homelab.restartService') {
-        await request(`${prefix}/restart?t=10`, 'POST'); return send(res, 200, {restarted: true, service: input.arguments.service});
+        return send(res, 200, await restartService(input.arguments.service, prefix, request, timing));
       }
       const info = JSON.parse((await request(`${prefix}/json`)).toString());
       if (input.tool === 'homelab.inspectService') {

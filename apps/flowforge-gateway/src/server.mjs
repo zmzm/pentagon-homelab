@@ -4,6 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, append
 import { pathToFileURL } from 'node:url';
 import { Failure, check, authenticate, object, str, body, redact, send } from './common.mjs';
 import { operation, validatePolicy, executor } from './operations.mjs';
+import { uncertainRestart } from './restart.mjs';
 
 const canonical = value => JSON.stringify(value, function (_key, item) {
   return item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a],[b]) => a.localeCompare(b))) : item;
@@ -44,12 +45,22 @@ export function createGateway({env, policy, execute = executor(env, policy), sta
         record.status = 'CONSUMED'; save(record); approved = true;
       }
       audit({...entry, event: 'execution_started', approvedByUser: approved, approvalId, resultStatus: 'success'});
-      const result = redact(await execute(tool, args), secrets);
+      let executed;
+      try { executed = await execute(tool, args); }
+      catch (err) {
+        if (tool !== 'homelab.restartService') throw err;
+        // The broker response may have been lost after Docker accepted the write.
+        executed = uncertainRestart(args.service);
+      }
+      const result = redact(executed, secrets);
       check(Buffer.byteLength(JSON.stringify(result)) <= 131072, 'OUTPUT_TOO_LARGE', 502);
-      audit({...entry, resultStatus: 'success', approvedByUser: approved, approvalId, durationMs: performance.now() - start});
-      if (approved) save({...load(approvalId), status: 'DONE', outcome: {success: true, data: result}});
+      const uncertain = tool === 'homelab.restartService' && result.restart?.status === 'uncertain';
+      const outcome = {success: !uncertain, ...(uncertain ? {error: 'RESTART_UNCERTAIN'} : {}), data: result};
+      if (uncertain) counts.tool_call_errors_total++;
+      audit({...entry, resultStatus: uncertain ? 'uncertain' : 'success', approvedByUser: approved, approvalId, durationMs: performance.now() - start});
+      if (approved) save({...load(approvalId), status: uncertain ? 'UNCERTAIN' : 'DONE', outcome});
       if (tool === 'flowforge.run') counts.workflow_runs++;
-      return {success: true, data: result};
+      return outcome;
     } catch (err) {
       counts.tool_call_errors_total++;
       const failure = err instanceof Failure ? err : new Failure('INTERNAL_ERROR', 500);
