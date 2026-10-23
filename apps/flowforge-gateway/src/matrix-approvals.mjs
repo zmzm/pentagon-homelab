@@ -25,15 +25,44 @@ export function decisionFor(event, room, expectedRoom, users, prompts, now) {
   return {id, approve, operator: event.sender, matrixEventId: event.event_id, matrixRoomId: room, promptEventId: prompt.eventId};
 }
 
-export function messageChunks(text) {
-  const chunks = []; let current = '', bytes = 0;
+function textPrefix(text, limit) {
+  let current = '', bytes = 0;
   for (const character of text) {
     const size = Buffer.byteLength(character);
-    if (bytes + size > 10000) {chunks.push(current); current = ''; bytes = 0;}
+    if (bytes + size > limit) break;
     current += character; bytes += size;
   }
-  if (current) chunks.push(current);
-  return chunks;
+  return current;
+}
+
+const planNames = ['concept-plan.md', 'grounded-plan.md'];
+const markdownType = 'text/markdown; charset=utf-8';
+const label = value => String(value ?? 'unknown').replace(/[\r\n\t]/g, ' ').slice(0, 100);
+
+// Only the authenticated gateway response enters this snapshot. In particular, there
+// is no FlowForge filesystem access or second model call in the delivery path.
+function workflowDelivery(run) {
+  const files = run.status === 'DONE' ? planNames.filter(name => typeof run.outputs?.[name] === 'string' && run.outputs[name].length)
+    .map(name => ({name, text: run.outputs[name], uploadStatus: 'pending', uploadAttempts: 0})) : [];
+  const task = label(run.task_id), runId = label(run.run_id);
+  const error = /^[A-Z][A-Z0-9_]{0,79}$/.test(run.error) ? run.error : 'PLANNING_PIPELINE_FAILED';
+  const body = run.status === 'DONE'
+    ? `FlowForge planning completed: task ${task}, run ${runId}. Outcome: DONE. Available plans: ${files.map(file => file.name).join(', ') || 'none'}.`
+    : `FlowForge planning failed: task ${task}, run ${runId}. Outcome: FAILED. Error: ${error}.`;
+  return {task, runId, outcome: run.status, status: 'pending', notice: {body}, files};
+}
+
+function workflowFallback(delivery) {
+  const missing = planNames.filter(name => !delivery.files.some(file => file.name === name));
+  const pending = delivery.files.filter(file => !file.eventId);
+  let body = `FlowForge attachment delivery incomplete: task ${delivery.task}, run ${delivery.runId}. Undelivered files: ${pending.map(file => file.name).join(', ') || 'none'}.`;
+  if (missing.length) body += ` Not returned by gateway: ${missing.join(', ')}.`;
+  body += ' Bounded text fallback follows. Full available sanitized plans are retained in relay state; uncertain uploads require operator review.';
+  for (const file of pending) {
+    const excerpt = textPrefix(file.text, 3000);
+    body += `\n\n${file.name}\n${excerpt}${excerpt.length < file.text.length ? '\n[Truncated; full sanitized plan retained in relay state.]' : ''}`;
+  }
+  return {body};
 }
 
 function restartResultText(id, record) {
@@ -75,9 +104,12 @@ export class ApprovalRelay {
   }
   async sendEvent(id, suffix, type, content) {
     // Check encryption before every send, including retries. Never leak plaintext into encrypted rooms.
+    await this.checkRoom();
+    return this.matrix('PUT', `/rooms/${encodeURIComponent(this.room)}/send/${type}/${encodeURIComponent(`approval-${id}-${suffix}`)}`, content);
+  }
+  async checkRoom() {
     const state = await this.matrix('GET', `/rooms/${encodeURIComponent(this.room)}/state`);
     check(!state.some(event => event.type === 'm.room.encryption'), 'ENCRYPTED_APPROVAL_ROOM');
-    return this.matrix('PUT', `/rooms/${encodeURIComponent(this.room)}/send/${type}/${encodeURIComponent(`approval-${id}-${suffix}`)}`, content);
   }
   async notify(id, suffix, text) {
     return this.sendEvent(id, suffix, 'm.room.message', {msgtype: 'm.notice', body: text});
@@ -118,22 +150,93 @@ export class ApprovalRelay {
     else if (record.expiresAt <= this.now()) text = `Approval ${id} expired. No new execution was attempted.`;
     else text = `Approval ${id}: execution outcome is uncertain (${record.status}). Inspect safely; do not retry the action automatically.`;
     if (record.tool === 'flowforge.run' && record.outcome?.data?.run_id) {
-      prompt.workflowPending = true;
       text = `Approved ${id}. FlowForge planning run ${record.outcome.data.run_id} started. Only concept and grounded planning steps run; the source repository stays read-only. I will post the completed plans here.`;
     }
     await this.notify(id, 'result', text);
+    if (record.tool === 'flowforge.run' && record.outcome?.data?.run_id) prompt.workflowPending = true;
     prompt.finished = true; this.save(this.state);
   }
   async workflowResult(id, prompt) {
-    const response = await this.gateway('GET', `/approvals/${id}/workflow`);
-    const run = response.data;
-    if (run.status === 'RUNNING') return;
-    const header = `FlowForge task-analysis ${run.status}: task ${run.task_id}, run ${run.run_id}`;
-    const outputs = Object.entries(run.outputs || {}).map(([name, content]) => `\n\n${name}\n${content}`).join('');
-    const text = run.status === 'DONE' ? header + outputs : header + `\nError: ${run.error || 'UNKNOWN'}`;
-    const chunks = messageChunks(text);
-    for (let index = 0; index < chunks.length; index++) await this.notify(id, `workflow-${index}`, chunks[index]);
-    prompt.workflowPending = false; this.save(this.state);
+    if (!prompt.workflowDelivery) {
+      const {data: run} = await this.gateway('GET', `/approvals/${id}/workflow`);
+      if (run.status === 'RUNNING') return;
+      check(['DONE', 'FAILED'].includes(run.status), 'INVALID_WORKFLOW_STATUS');
+      prompt.workflowDelivery = workflowDelivery(run);
+      // Freeze the sanitized bytes and message bodies before the first send so
+      // retries keep both the same transaction IDs and the same content.
+      this.save(this.state);
+    }
+    const delivery = prompt.workflowDelivery;
+    await this.workflowNotice(id, 'workflow-completion', delivery.notice);
+    if (delivery.outcome === 'FAILED') {
+      delivery.status = 'delivered'; prompt.workflowPending = false; this.save(this.state); return;
+    }
+    for (const file of delivery.files) {
+      if (file.eventId) continue;
+      await this.processOperation(id, 'workflow_attachment', async () => {
+        await this.uploadPlan(file);
+        if (file.uploadStatus !== 'uploaded') return;
+        try {
+          const response = await this.sendEvent(id, `workflow-file-${file.name}`, 'm.room.message', {
+            msgtype: 'm.file', body: file.name, filename: file.name, url: file.mxc,
+            info: {mimetype: markdownType, size: Buffer.byteLength(file.text, 'utf8')},
+          });
+          check(response.event_id, 'MISSING_FILE_EVENT');
+          file.eventId = response.event_id; delete file.sendError;
+        } catch {
+          file.sendError = 'MATRIX_SEND_UNCONFIRMED'; this.save(this.state);
+          throw new Error('MATRIX_SEND_UNCONFIRMED');
+        }
+        this.save(this.state);
+      });
+    }
+    const complete = planNames.every(name => delivery.files.some(file => file.name === name && file.eventId));
+    delivery.status = complete ? 'delivered' : 'failed'; this.save(this.state);
+    if (!complete) {
+      // Persist this body too: subsequent progress must not change an ambiguous
+      // send's payload under the same Matrix transaction ID.
+      delivery.fallback ||= workflowFallback(delivery); this.save(this.state);
+      await this.workflowNotice(id, 'workflow-fallback', delivery.fallback);
+    }
+    const retryable = delivery.files.some(file => !file.eventId && ['pending', 'uploaded'].includes(file.uploadStatus));
+    prompt.workflowPending = !complete && retryable; this.save(this.state);
+  }
+  async workflowNotice(id, suffix, message) {
+    if (message.eventId) return;
+    try {
+      const response = await this.notify(id, suffix, message.body);
+      check(response.event_id, 'MISSING_WORKFLOW_EVENT');
+      message.eventId = response.event_id; delete message.error;
+    } catch {
+      message.error = 'MATRIX_SEND_UNCONFIRMED'; this.save(this.state);
+      throw new Error('MATRIX_SEND_UNCONFIRMED');
+    }
+    this.save(this.state);
+  }
+  async uploadPlan(file) {
+    // POST /upload has no transaction ID. A persisted claim without a saved URI
+    // means the upload may have succeeded; never repeat it automatically.
+    if (file.uploadStatus === 'uploading') {
+      file.uploadStatus = 'uncertain'; file.uploadError = 'MATRIX_UPLOAD_UNCONFIRMED'; this.save(this.state);
+    }
+    if (file.uploadStatus !== 'pending' || file.retryAt > this.now()) return;
+    await this.checkRoom();
+    file.uploadStatus = 'uploading'; file.uploadAttempts++; this.save(this.state);
+    try {
+      const response = await this.matrix('POST', `/_matrix/media/v3/upload?filename=${encodeURIComponent(file.name)}`,
+        Buffer.from(file.text, 'utf8'), {contentType: markdownType});
+      check(typeof response.content_uri === 'string' && /^mxc:\/\/[^/\s?#]+\/[^/\s?#]+$/.test(response.content_uri), 'INVALID_MEDIA_URI');
+      file.mxc = response.content_uri; file.uploadStatus = 'uploaded'; delete file.uploadError; delete file.retryAt;
+    } catch (error) {
+      const rejected = error.httpStatus >= 400 && error.httpStatus < 500 && error.httpStatus !== 408;
+      file.uploadStatus = rejected ? 'failed' : 'uncertain';
+      file.uploadError = rejected ? `MATRIX_UPLOAD_HTTP_${error.httpStatus}` : 'MATRIX_UPLOAD_UNCONFIRMED';
+      // Only an explicit rate-limit rejection is automatically replayable.
+      if (error.httpStatus === 429 && file.uploadAttempts < 3) {
+        file.uploadStatus = 'pending'; file.retryAt = this.now() + Math.max(30000, error.retryAfterMs || 0);
+      }
+    }
+    this.save(this.state);
   }
   async tick() {
     if (!this.state.since) {
@@ -173,16 +276,27 @@ export class ApprovalRelay {
       else if (!prompt.finished && prompt.expiresAt <= this.now()) await this.processOperation(id, 'expiry', () => this.finish(id, prompt, {status: 'EXPIRED', expiresAt: prompt.expiresAt}));
     }
     // Bound local bookkeeping; gateway audit remains authoritative.
-    const done = Object.entries(this.state.prompts).filter(([, p]) => p.finished && !p.workflowPending);
+    const done = Object.entries(this.state.prompts).filter(([, p]) => p.finished && !p.workflowPending &&
+      (!p.workflowDelivery || p.workflowDelivery.status === 'delivered'));
     for (const [id] of done.slice(0, Math.max(0, done.length - 200))) delete this.state.prompts[id];
     this.save(this.state);
   }
 }
 
 export function jsonClient(base, token, prefix = '') {
-  return async (method, path, payload) => {
-    const response = await fetch(base + prefix + path, {method, headers: {authorization: `Bearer ${token}`, 'content-type': 'application/json', 'user-agent': 'Pentagon-Approval-Relay/1.0'}, body: payload === undefined ? undefined : JSON.stringify(payload), redirect: 'error', signal: AbortSignal.timeout(35000)});
-    const raw = await bounded(response.body, 1048576); check(response.ok, 'APPROVAL_RELAY_HTTP_FAILED', 502);
+  return async (method, path, payload, {contentType = 'application/json'} = {}) => {
+    const response = await fetch(base + (path.startsWith('/_matrix/media/') ? '' : prefix) + path, {method, headers: {authorization: `Bearer ${token}`, 'content-type': contentType, 'user-agent': 'Pentagon-Approval-Relay/1.0'}, body: payload === undefined ? undefined : Buffer.isBuffer(payload) ? payload : JSON.stringify(payload), redirect: 'error', signal: AbortSignal.timeout(35000)});
+    if (!response.ok) {
+      // Expose status/retry timing only, never upstream error text or credentials.
+      let retryAfterMs = Number(response.headers.get('retry-after')) * 1000;
+      try {
+        const error = JSON.parse((await bounded(response.body, 16384)).toString());
+        if (Number.isFinite(error.retry_after_ms)) retryAfterMs = Math.max(retryAfterMs, error.retry_after_ms);
+      } catch {}
+      throw Object.assign(new Error('APPROVAL_RELAY_HTTP_FAILED'), {httpStatus: response.status,
+        retryAfterMs: Number.isFinite(retryAfterMs) ? Math.min(3600000, Math.max(0, retryAfterMs)) : 0});
+    }
+    const raw = await bounded(response.body, 1048576);
     return JSON.parse(raw.toString());
   };
 }

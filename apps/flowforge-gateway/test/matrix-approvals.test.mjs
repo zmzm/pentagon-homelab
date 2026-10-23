@@ -76,7 +76,8 @@ test('completed workflow plans are delivered once without another write executio
     matrix:async(method,path,data)=>{
       if(path.startsWith('/sync?'))return {next_batch:'next'};
       if(method==='GET')return [];
-      sends.push(data.body);return {event_id:'$plan'};
+      if(path.startsWith('/_matrix/media/'))return {content_uri:'mxc://server/plan'};
+      sends.push(data);return {event_id:'$plan'};
     },
     gateway:async(method,path)=>{
       assert.equal(method,'GET');
@@ -85,8 +86,31 @@ test('completed workflow plans are delivered once without another write executio
       return {success:true,data:{status:'DONE',task_id:'test',run_id:'run',outputs:{'concept-plan.md':'Existing concept output','grounded-plan.md':'Existing grounded output'}}};
     },
   });
-  await relay.tick();assert.equal(sends.length,1);assert.ok(sends[0].includes('Existing grounded output'));
-  await relay.tick();assert.equal(sends.length,1);
+  await relay.tick();assert.equal(sends.length,3);assert.ok(sends[0].body.includes('Outcome: DONE'));
+  assert.deepEqual(sends.slice(1).map(data=>data.filename),['concept-plan.md','grounded-plan.md']);
+  await relay.tick();assert.equal(sends.length,3);
+});
+
+test('an unconfirmed run-start notice is retried before workflow delivery without replaying execution', async () => {
+  const f = fixture({status: 'DONE'});
+  f.record.tool = 'flowforge.run'; f.record.outcome = {data: {run_id: 'run'}};
+  f.state.prompts[id] = {...prompts[id], decision: {approve: true}, executionAttempted: true};
+  const matrix = f.relay.matrix;
+  let fail = true;
+  f.relay.matrix = async (...args) => {
+    const result = await matrix(...args);
+    if (args[1].endsWith(`approval-${id}-result`) && fail) throw new Error('response lost');
+    return result;
+  };
+  await f.relay.tick();
+  assert.equal(f.state.prompts[id].workflowPending, undefined);
+  assert.equal(f.state.prompts[id].finished, undefined);
+  const restarted = new ApprovalRelay({...f.relay, state: structuredClone(f.state)});
+  fail = false; await restarted.tick();
+  assert.equal(restarted.state.prompts[id].workflowPending, true);
+  assert.equal(restarted.state.prompts[id].finished, true);
+  assert.equal(f.executions.length, 0);
+  assert.equal(f.sends.length, 2); assert.deepEqual(f.sends[0], f.sends[1]);
 });
 
 test('a failed workflow lookup does not block another workflow or approval and retries safely', async () => {
@@ -103,6 +127,7 @@ test('a failed workflow lookup does not block another workflow or approval and r
     matrix: async (method, path, data) => {
       if (path.startsWith('/sync?')) return {next_batch: 'next'};
       if (method === 'GET') return [];
+      if (path.startsWith('/_matrix/media/')) return {content_uri: 'mxc://server/plan'};
       sends.push({path, data}); return {event_id: '$result'};
     },
     gateway: async (method, path) => {
@@ -113,20 +138,21 @@ test('a failed workflow lookup does not block another workflow or approval and r
       if (path === `/approvals/${id}/workflow` && fail) {
         throw Object.assign(new Error('secret credential and full payload'), {code: 'secret credential'});
       }
-      return {data: {status: 'DONE', task_id: 'task', run_id: path, outputs: {'plan.md': 'Completed plan'}}};
+      return {data: {status: 'DONE', task_id: 'task', run_id: path,
+        outputs: {'concept-plan.md': 'Concept plan', 'grounded-plan.md': 'Grounded plan'}}};
     },
   });
   await relay.tick();
   assert.equal(state.prompts[id].workflowPending, true);
   assert.equal(state.prompts[workflowId].workflowPending, false);
   assert.equal(state.prompts[approvalId].finished, true);
-  assert.equal(sends.length, 2);
+  assert.equal(sends.length, 4);
   assert.deepEqual(logs, [{timestamp: new Date(now).toISOString(), event: 'approval_relay_operation_failed',
     code: 'APPROVAL_RELAY_OPERATION_FAILED', approvalId: id, stage: 'workflow_result'}]);
   fail = false;
   await relay.tick();
   assert.equal(state.prompts[id].workflowPending, false);
-  assert.equal(sends.length, 3);
+  assert.equal(sends.length, 7);
   assert.equal(lookups.filter(path => path === `/approvals/${workflowId}/workflow`).length, 1);
 });
 

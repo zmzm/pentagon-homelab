@@ -306,8 +306,65 @@ The listener records the Matrix sender, room, decision event and prompt event wi
 gateway. It then executes the exact stored action once. Gateway approval state is consumed
 durably before the effect; a crash or ambiguous outcome is reported for review, never
 blindly replayed. Results return through the listener. For planning runs, the listener
-polls that specific run and posts completed plans in bounded messages. It does not run
+polls that specific run and delivers completed plans as described below. It does not run
 another planner or schedule business workflows. Existing cron jobs are untouched.
+
+### Planning result delivery
+
+A completed run produces one deterministic English notice with its task ID, run ID,
+outcome and available plan filenames, followed by `concept-plan.md` and
+`grounded-plan.md` as complete UTF-8 Markdown `m.file` attachments. There is no model
+summary or inferred conclusion. Failed runs produce only a short notice with the
+task/run IDs and error code, without dumping outputs or tracebacks.
+
+The only source is the authenticated gateway's GET `/approvals/:id/workflow`
+response, after gateway redaction. The relay never reads raw FlowForge files and
+needs no source/output mount. It uploads these sanitized bytes through Matrix's
+media API using the existing `MATRIX_ACCESS_TOKEN`, then sends the file events to
+`MATRIX_HOME_ROOM`. The room must remain unencrypted; uploads and sends check this.
+
+Delivery progress lives in `data/matrix-approvals/matrix-approvals.json` under each
+prompt's `workflowDelivery`: the frozen sanitized plans, notice/fallback bodies,
+per-file upload status, Matrix media URI and acknowledged event IDs. Keep this
+state volume and the existing Matrix account/token across restarts. Message retries
+reuse the same transaction ID and content, following [Matrix transaction semantics](https://spec.matrix.org/v1.17/client-server-api/#transaction-identifiers).
+An acknowledged upload is reused. POST media uploads have no transaction ID, so
+the relay durably claims each attempt before sending. A timeout, server error,
+invalid success response or crash before saving the media URI leaves the upload
+`uncertain`; it is never automatically repeated. Explicit HTTP upload rejections
+are recorded as failures. Rate-limit rejections alone retry automatically, at most
+three attempts, respecting retry timing with a minimum 30-second delay.
+
+If any attachment remains undelivered or a required plan is missing, delivery stays
+`failed` and the listener sends one bounded fallback: at most 3,000 UTF-8 bytes per
+undelivered plan, with explicit truncation markers. Complete available sanitized
+plans remain in relay state. Failed deliveries are excluded from normal completed
+prompt pruning. Confirmed files are not resent; unconfirmed message sends keep
+retrying the same transaction, including after a restart. A fallback send failure
+is also durable and retried; it never marks attachment delivery successful.
+
+For operator recovery, stop the relay and back up its state before inspecting or
+editing delivery records. For `uncertain` uploads, first determine whether Matrix
+accepted the upload and recover its URI if possible; do not clear claims blindly.
+If recovery cannot establish the outcome, retain the failure record and review the
+full sanitized text in relay state. Do not attach raw files from `data/flowforge-api`.
+Approval decisions and execution claims must remain intact; never resubmit the paid
+planning run to repair delivery.
+
+To deploy only this relay change using the existing environment and state volume:
+
+```bash
+cd apps/hermes
+docker compose build matrix-approvals
+docker compose up -d --no-deps matrix-approvals
+docker compose ps matrix-approvals
+docker compose logs --tail 50 matrix-approvals
+```
+
+No gateway, planner or broker rollout is required. Validate with the local gateway
+test suite first; deploying the relay resumes pending deliveries without starting
+another planning run. This delivery change has not been deployed or validated with
+a paid workflow.
 
 The agent cannot grant approval and should not resubmit or retry a pending write. Approval
 commands belong to the listener; Hermes should leave their execution to it. A plain chat
