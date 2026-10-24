@@ -377,7 +377,7 @@ and external checkout dependencies apply only to the rows using them.
 | Gateway/broker/approval/restart/delivery; `apps/flowforge-gateway` | `npm test` | Node 24+, local TCP/Unix fixture sockets and temp files; no npm install needed. Fake Docker/Matrix plus real local HTTP boundaries prove modeled behavior, not production effects. |
 | Focus one gateway area; same directory | `node --test test/restart.test.mjs` (or `gateway.test.mjs`, `matrix-approvals.test.mjs`, `workflow-delivery.test.mjs` under `test/`) | Include related integration tests when a shared state/response contract changes. |
 | FlowForge adapter; repository root | `python3 -m unittest discover -s apps/flowforge -p 'test_*.py'` | Python/Git/temp writable tree. Real-runner test skips if sibling `apps/flow-forge-tui/pipeline_runner.py` is absent; its model process boundary is mocked. Does not exercise real OpenCode permissions or GLM. |
-| MCP bridge; root | `python3 -m unittest discover -s apps/hermes -p 'test_*.py'` | MCP SDK + Pydantic in chosen Python; mocked HTTP. Missing imports are an unavailable environment, not a passing skip. Can use installed image in a disposable no-network container and read-only test mount; the current fixture has an installed-SDK attribute mismatch recorded below. |
+| MCP bridge; root | `python3 -m unittest discover -s apps/hermes -p 'test_*.py'` | MCP SDK + Pydantic in chosen Python; mocked HTTP. Missing imports are an unavailable environment, not a passing skip. Can use installed image in a disposable no-network container and read-only test mount; schema inspection uses serialization aliases, with tested scope recorded below. |
 | Skill behavior checker/HTTP guard regressions; root | `python3 -m unittest discover -s scripts -p 'test_verify_hermes_skills.py'` | Python stdlib; checks trace interpretation including deferred calls, ambiguity and validation guard, not actual model behavior. |
 | Offline installed-image skill/native registration; root | `python3 scripts/verify_hermes_skills.py` | Docker access and existing `personal-agent-hermes-1` image/container/skill tree. Disposable network-disabled tmpfs home, fixture credentials; checks native loading, exact skill bytes, CLI/Matrix/cron effective tool inventory and isolation hashes. Writes ignored evidence; no Matrix/model requests. |
 | Deployed native registration; `apps/hermes` | `docker compose exec -T hermes python - < ../../scripts/verify_hermes_tool_registration.py` | Installed Hermes/MCP/plugin/mounts; starts bridge and reads skills, may update native caches. No personal-tool/model calls. Prefer offline row for proposed changes. |
@@ -441,13 +441,20 @@ distinct checks in this stack; the matrix records what each exercises.
 
 ## Current gaps and follow-up decisions
 
-These findings were not repaired by this documentation change:
+Findings from the initial documentation change and their current status:
 
-- The bridge fixture assumes the MCP SDK's Python `Tool.inputSchema` attribute;
-  installed-image execution raises an attribute error suggesting `input_schema`.
-  Wire-level registration/smoke checks pass. Decide how to make fixture inspection
-  support the SDK versions already supported by the bridge; this is a test
-  compatibility gap, not evidence that wire-level tool discovery failed.
+- **Resolved 2026-10-24 — bridge test schema inspection:** the test now reads
+  `Tool.model_dump(by_alias=True)['inputSchema']`, preserving the MCP wire name
+  across Python `input_schema` and `inputSchema` field layouts. Missing/empty
+  schemas still fail the required-input assertions. In the installed Hermes image
+  `sha256:2f305c9bdc81731f48664586d23cb6a6f838a15ad7be1bfabe0c3c269d8e09b9`,
+  Python 3.14.7, MCP/mcp-types 2.3.0 and Pydantic 2.13.4 passed **4 tests, 0 skipped**
+  in a disposable network-disabled container with a read-only test mount and mocked
+  HTTP. Both field layouts were checked with Pydantic fixtures; actual installed-SDK
+  coverage is MCP 2.3.0's `MCPServer` only. This image's `FastMCP` module is an
+  import-rejecting migration stub, so the bridge's older-SDK fallback remains
+  unverified against an actual older SDK. Production bridge behavior is unchanged;
+  the historical validation report above retains the original failure.
 - The adapter guide says selection preserves the month gate; GET `/tasks` uses
   it for discovery, but POST `/run` accepts any matching task ID/hash without
   requiring `todo` or current-month eligibility. Decide whether explicit selection

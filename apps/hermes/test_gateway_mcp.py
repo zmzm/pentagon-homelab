@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
+from pydantic import BaseModel, Field
 
 
 spec = importlib.util.spec_from_file_location('gateway_mcp', Path(__file__).with_name('gateway_mcp.py'))
@@ -19,10 +20,29 @@ class ServiceDiscovery(unittest.TestCase):
     def test_registered_mcp_discovery_needs_audit_context_but_no_target_or_approval(self):
         tools = asyncio.run(bridge.mcp.list_tools())
         tool = next(tool for tool in tools if tool.name == 'homelab_list_services')
-        self.assertEqual(set(tool.inputSchema['properties']), {'session_id', 'user_request'})
-        self.assertEqual(set(tool.inputSchema['required']), {'session_id', 'user_request'})
+        # SDK Python fields vary; aliases preserve the MCP wire-format names.
+        schema = tool.model_dump(by_alias=True)['inputSchema']
+        self.assertEqual(set(schema['properties']), {'session_id', 'user_request'})
+        self.assertEqual(set(schema['required']), {'session_id', 'user_request'})
         self.assertIn('configured tool coverage', tool.description)
         self.assertIn('informational', tool.description)
+
+    def test_schema_serialization_supports_both_python_field_names(self):
+        # Pydantic fixtures model field layouts, not additional installed SDKs.
+        class CamelCaseTool(BaseModel):
+            inputSchema: dict
+
+        class SnakeCaseTool(BaseModel):
+            input_schema: dict = Field(alias='inputSchema')
+
+        schema = {'type': 'object',
+                  'properties': {'session_id': {'type': 'string'},
+                                 'user_request': {'type': 'string'}},
+                  'required': ['session_id', 'user_request']}
+        for model in (CamelCaseTool, SnakeCaseTool):
+            with self.subTest(python_layout=model.__name__):
+                tool = model(inputSchema=schema)
+                self.assertEqual(tool.model_dump(by_alias=True)['inputSchema'], schema)
 
     def test_discovery_forwards_only_authenticated_get_and_audit_headers(self):
         payload = {'success': True, 'data': {'coverage': 'configured_tool_coverage',
