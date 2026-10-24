@@ -174,6 +174,45 @@ test('rate-limit rejection retries only the failed upload with backoff and a fin
   }
 });
 
+test('a real HTTP 429 with an invalid Retry-After header preserves the JSON upload retry delay', async t => {
+  const f = fixture();
+  const uploads = [];
+  const server = http.createServer(async (req, res) => {
+    for await (const _chunk of req) {} // Consume each upload or message before responding.
+    let result;
+    if (req.url.startsWith('/_matrix/media/v3/upload?')) {
+      const name = new URL(req.url, 'http://fixture').searchParams.get('filename');
+      uploads.push(name);
+      if (uploads.length === 1) {
+        res.writeHead(429, {'retry-after': 'invalid', 'content-type': 'application/json'});
+        res.end('{"retry_after_ms":60000}'); return;
+      }
+      result = {content_uri: `mxc://server/${name}`};
+    } else if (req.url.startsWith('/_matrix/client/v3/sync?')) result = {next_batch: 'next'};
+    else if (req.url.endsWith('/state')) result = [];
+    else result = {event_id: '$fixture'};
+    res.writeHead(200, {'content-type': 'application/json'}); res.end(JSON.stringify(result));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => {server.closeAllConnections(); server.close(resolve);}));
+  f.relay.matrix = jsonClient(`http://127.0.0.1:${server.address().port}`, 'fixture-token', '/_matrix/client/v3');
+
+  await f.relay.tick();
+  assert.deepEqual(uploads, names);
+  assert.equal(f.delivery().files[0].uploadStatus, 'pending');
+  assert.equal(f.delivery().files[0].uploadAttempts, 1);
+  f.restart();
+  f.advance(30000); await f.relay.tick();
+  assert.deepEqual(uploads, names);
+  f.advance(29999); await f.relay.tick();
+  assert.deepEqual(uploads, names);
+  f.advance(1); await f.relay.tick();
+  assert.deepEqual(uploads, [...names, names[0]]);
+  assert.equal(f.delivery().files[0].uploadAttempts, 2);
+  assert.equal(f.delivery().status, 'delivered');
+  assert.equal(f.state.prompts[id].workflowPending, false);
+});
+
 test('missing plans are explicit delivery failures and unknown outputs are never attached', async () => {
   const f = fixture({run: {status: 'DONE', task_id: 'TASK-12', run_id: runId,
     outputs: {'concept-plan.md': 'Available concept', 'grounded-plan.md': '', 'runner.log': 'RAW_UNSANITIZED', '/source/raw.md': 'RAW_UNSANITIZED'}}});
