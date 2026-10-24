@@ -28,6 +28,20 @@ directory, not the repository root. Follow that vault's `AGENTS.md`, `index.md`,
 An accessible repository checkout/provider can supply the same files if the
 configured mount is unavailable; inspect its revision and local modifications.
 
+On this host, `apps/hermes/.env` configures the verified local checkout below.
+These are host-specific paths; use the configuration lookup above on other machines.
+
+```text
+Repository:       /home/pentagon-admin/Documents/apps/obsidian-vaults
+Coding root:      /home/pentagon-admin/Documents/apps/obsidian-vaults/coding
+Engineering skill: /home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/SKILL.md
+References:       /home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references
+```
+
+Open the [local engineering skill](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/SKILL.md)
+and only the local references relevant to the task. Local files may change;
+check their revision and modifications against the pinned provenance below.
+
 Revision used: **`0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d`**. A read-only remote
 `git ls-remote --symref origin HEAD refs/heads/main refs/heads/docs/reusable-engineering-skill`
 on 2026-10-24 confirmed default `HEAD → main`, with both branches at that revision.
@@ -40,14 +54,14 @@ existing code/tests to proceed within scope, and disclose the limitation.
 
 Select only references relevant to the decision:
 
-| Decision | Canonical shared reference |
-| --- | --- |
-| State transitions, persistence, recovery | [State and recovery](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/state-and-recovery.md) |
-| Uncertain effects and retry budgets | [Retries and idempotency](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/retries-and-idempotency.md) |
-| APIs, configuration, stored formats | [Contracts and validation](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/contracts-and-validation.md) |
-| Errors, diagnostics, health evidence | [Errors and observability](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/errors-and-observability.md) |
-| Refactoring and module boundaries | [Readability and boundaries](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/readability-and-boundaries.md) |
-| Verification and authorized rollout | [Verification and change safety](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/verification-and-change-safety.md) |
+| Decision | Canonical shared reference | Local reference |
+| --- | --- | --- |
+| State transitions, persistence, recovery | [State and recovery](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/state-and-recovery.md) | [state-and-recovery.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/state-and-recovery.md) |
+| Uncertain effects and retry budgets | [Retries and idempotency](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/retries-and-idempotency.md) | [retries-and-idempotency.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/retries-and-idempotency.md) |
+| APIs, configuration, stored formats | [Contracts and validation](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/contracts-and-validation.md) | [contracts-and-validation.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/contracts-and-validation.md) |
+| Errors, diagnostics, health evidence | [Errors and observability](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/errors-and-observability.md) | [errors-and-observability.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/errors-and-observability.md) |
+| Refactoring and module boundaries | [Readability and boundaries](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/readability-and-boundaries.md) | [readability-and-boundaries.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/readability-and-boundaries.md) |
+| Verification and authorized rollout | [Verification and change safety](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/verification-and-change-safety.md) | [verification-and-change-safety.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md) |
 
 ## Component responsibilities and sources of truth
 
