@@ -12,56 +12,58 @@ not a promise about every crash, host failure, or future model response.
 
 ## Shared guidance and provenance
 
-Use the shared [engineering skill](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/SKILL.md)
-for principles; this document records their project-specific application.
-Load the actual skill and relevant references, rather than relying on links or
-retrieval snippets to load instructions implicitly.
+Read the shared [engineering skill](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/SKILL.md)
+from the local checkout. This document records its project-specific application.
+Read the actual local skill and relevant references; a link or retrieval snippet
+alone does not load their instructions.
 
-Locate the vault from `CODING_VAULT_PATH` in the current environment or private
-`apps/hermes/.env`, then verify the effective read-only mounts/defaults in
-[Compose](../apps/hermes/docker-compose.yml) and the variable's purpose in
-[the example](../apps/hermes/.env.example). Resolve relative defaults from
-`apps/hermes`. Do not source arbitrary environment files or dump resolved
-Compose configuration containing secrets. The value identifies the `coding`
-directory, not the repository root. Follow that vault's `AGENTS.md`, `index.md`,
-`common/INDEX.md`, and `RULES.md` when loading `common/engineering/SKILL.md`.
-An accessible repository checkout/provider can supply the same files if the
-configured mount is unavailable; inspect its revision and local modifications.
-
-On this host, `apps/hermes/.env` configures the verified local checkout below.
-These are host-specific paths; use the configuration lookup above on other machines.
+The verified checkout configured by `apps/hermes/.env` on this host is:
 
 ```text
-Repository:       /home/pentagon-admin/Documents/apps/obsidian-vaults
-Coding root:      /home/pentagon-admin/Documents/apps/obsidian-vaults/coding
+Repository:        /home/pentagon-admin/Documents/apps/obsidian-vaults
+Coding root:       /home/pentagon-admin/Documents/apps/obsidian-vaults/coding
 Engineering skill: /home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/SKILL.md
-References:       /home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references
+References:        /home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references
 ```
 
-Open the [local engineering skill](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/SKILL.md)
-and only the local references relevant to the task. Local files may change;
-check their revision and modifications against the pinned provenance below.
+Use these local files directly. Do not fetch, pull, clone, browse GitHub, or use
+remote repository tools to load or revalidate guidance that is available locally.
+Preserve local vault modifications; do not reset or update the checkout to match
+the recorded revision. Local revision/status inspection is sufficient when
+provenance matters.
 
-Revision used: **`0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d`**. A read-only remote
-`git ls-remote --symref origin HEAD refs/heads/main refs/heads/docs/reusable-engineering-skill`
-on 2026-10-24 confirmed default `HEAD → main`, with both branches at that revision.
-The loaded engineering files and navigation/rules match that commit; unrelated
-vault working-tree changes were left untouched. The skill is already integrated
-into the default branch; there is no feature-branch merge prerequisite. Older
-checkouts must obtain this revision or a compatible descendant before claiming
-to apply it. If guidance cannot be read, report exactly what is missing, use
-existing code/tests to proceed within scope, and disclose the limitation.
+On another machine, locate an existing local checkout through `CODING_VAULT_PATH`
+in the environment or private `apps/hermes/.env`, and verify the vault mounts/defaults
+in [Compose](../apps/hermes/docker-compose.yml) and [the example](../apps/hermes/.env.example).
+Resolve relative defaults from `apps/hermes`. The configured value is the `coding`
+root, not the repository root. Do not source arbitrary environment files or print
+credentials. If the configured path is unavailable, check other configured local
+locations, report missing guidance and its effect, and proceed from existing
+code/tests within scope. Do not automatically substitute a remote fetch or claim
+that unread guidance was loaded.
 
-Select only references relevant to the decision:
+Follow the local vault's [AGENTS.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/AGENTS.md),
+[index.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/index.md),
+[common/INDEX.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/INDEX.md),
+and [RULES.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/RULES.md)
+when reading the engineering skill. Select only references relevant to the decision:
 
-| Decision | Canonical shared reference | Local reference |
-| --- | --- | --- |
-| State transitions, persistence, recovery | [State and recovery](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/state-and-recovery.md) | [state-and-recovery.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/state-and-recovery.md) |
-| Uncertain effects and retry budgets | [Retries and idempotency](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/retries-and-idempotency.md) | [retries-and-idempotency.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/retries-and-idempotency.md) |
-| APIs, configuration, stored formats | [Contracts and validation](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/contracts-and-validation.md) | [contracts-and-validation.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/contracts-and-validation.md) |
-| Errors, diagnostics, health evidence | [Errors and observability](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/errors-and-observability.md) | [errors-and-observability.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/errors-and-observability.md) |
-| Refactoring and module boundaries | [Readability and boundaries](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/readability-and-boundaries.md) | [readability-and-boundaries.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/readability-and-boundaries.md) |
-| Verification and authorized rollout | [Verification and change safety](https://github.com/zmzm/obsidian-vaults/blob/0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d/coding/common/engineering/references/verification-and-change-safety.md) | [verification-and-change-safety.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md) |
+| Decision | Local shared reference |
+| --- | --- |
+| State transitions, persistence, recovery | [State and recovery](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/state-and-recovery.md) |
+| Uncertain effects and retry budgets | [Retries and idempotency](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/retries-and-idempotency.md) |
+| APIs, configuration, stored formats | [Contracts and validation](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/contracts-and-validation.md) |
+| Errors, diagnostics, health evidence | [Errors and observability](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/errors-and-observability.md) |
+| Refactoring and module boundaries | [Readability and boundaries](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/readability-and-boundaries.md) |
+| Verification and authorized rollout | [Verification and change safety](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md) |
+
+Revision used to establish this guide: **`0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d`**.
+The initial verification on 2026-10-24 confirmed the skill was integrated into the
+remote default branch `main`, with the feature branch at the same revision; no
+feature-branch merge prerequisite remained. This is recorded provenance, not an
+instruction to repeat a remote check. The loaded engineering/navigation/rules files
+matched that commit, and unrelated local changes were preserved. For future work,
+read the current local files and disclose relevant differences from this baseline.
 
 ## Component responsibilities and sources of truth
 
