@@ -12,64 +12,44 @@ not a promise about every crash, host failure, or future model response.
 
 ## Shared guidance and provenance
 
-Read the shared [engineering skill](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/SKILL.md)
-from the local checkout. This document records its project-specific application.
-Read the actual local skill and relevant references; a link or retrieval snippet
-alone does not load their instructions.
+Resolve the local coding root once per task, when shared guidance is needed:
 
-When maintaining these repository instructions, keep reusable rules in the vault.
-Replace overlapping guidance with a local reference, not a copied or paraphrased
-section. Retain the homelab-specific decision, implementation evidence, operating
-constraint, or explicit exception and its reason. If a section has no such local
-content, omit it and route to the relevant vault reference.
+1. Use the effective `CODING_VAULT_PATH` environment value if set. Otherwise,
+   consult only that key in the existing `apps/hermes/.env`; do not source the
+   file, inspect other values, or print credentials. If neither supplies a value,
+   use the gateway's coding-vault source mount default in
+   [Compose](../apps/hermes/docker-compose.yml). Resolve relative source paths
+   from `apps/hermes`. The [example](../apps/hermes/.env.example) documents the
+   setting; it is not an override for existing configuration.
+2. Retain the resolved directory for subsequent reads. It is the external vault's
+   `coding` root, not its repository root. **Vault paths** in this guide and
+   AGENTS.md are literal paths relative to that directory, written as code rather
+   than repository-relative Markdown links. Ordinary Markdown links refer to
+   files/anchors in this homelab repository; no Markdown variable expansion is used.
+3. Read the applicable vault `AGENTS.md` and `common/engineering/SKILL.md` when
+   applying shared guidance. Follow its navigation/rules as needed; choose only
+   the references identified by the task's decision. The six-reference routing
+   table lives in [AGENTS.md](../AGENTS.md#shared-coding-vault).
 
-The verified checkout configured by `apps/hermes/.env` on this host is:
+Use local files directly. Do not fetch, pull, clone, browse GitHub, or use remote
+repository tools to revalidate available local guidance. Do not update/reset the
+vault checkout or discard local modifications. If the configured root is missing,
+check other already configured local locations; report unavailable guidance and
+its effect, proceed from existing code/tests within scope, and do not claim it
+was read or automatically fetch a remote replacement.
 
-```text
-Repository:        /home/pentagon-admin/Documents/apps/obsidian-vaults
-Coding root:       /home/pentagon-admin/Documents/apps/obsidian-vaults/coding
-Engineering skill: /home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/SKILL.md
-References:        /home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references
-```
+Keep reusable rules in the vault. A local section should record a homelab-specific
+decision, implementation evidence, operating constraint, or explained exception;
+otherwise route to the relevant vault reference rather than copying/paraphrasing it.
 
-Use these local files directly. Do not fetch, pull, clone, browse GitHub, or use
-remote repository tools to load or revalidate guidance that is available locally.
-Preserve local vault modifications; do not reset or update the checkout to match
-the recorded revision. Local revision/status inspection is sufficient when
-provenance matters.
-
-On another machine, locate an existing local checkout through `CODING_VAULT_PATH`
-in the environment or private `apps/hermes/.env`, and verify the vault mounts/defaults
-in [Compose](../apps/hermes/docker-compose.yml) and [the example](../apps/hermes/.env.example).
-Resolve relative defaults from `apps/hermes`. The configured value is the `coding`
-root, not the repository root. Do not source arbitrary environment files or print
-credentials. If the configured path is unavailable, check other configured local
-locations, report missing guidance and its effect, and proceed from existing
-code/tests within scope. Do not automatically substitute a remote fetch or claim
-that unread guidance was loaded.
-
-Follow the local vault's [AGENTS.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/AGENTS.md),
-[index.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/index.md),
-[common/INDEX.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/INDEX.md),
-and [RULES.md](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/RULES.md)
-when reading the engineering skill. Select only references relevant to the decision:
-
-| Decision | Local shared reference |
-| --- | --- |
-| State transitions, persistence, recovery | [State and recovery](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/state-and-recovery.md) |
-| Uncertain effects and retry budgets | [Retries and idempotency](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/retries-and-idempotency.md) |
-| APIs, configuration, stored formats | [Contracts and validation](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/contracts-and-validation.md) |
-| Errors, diagnostics, health evidence | [Errors and observability](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/errors-and-observability.md) |
-| Refactoring and module boundaries | [Readability and boundaries](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/readability-and-boundaries.md) |
-| Verification and authorized rollout | [Verification and change safety](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md) |
-
-Revision used to establish this guide: **`0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d`**.
-The initial verification on 2026-10-24 confirmed the skill was integrated into the
-remote default branch `main`, with the feature branch at the same revision; no
-feature-branch merge prerequisite remained. This is recorded provenance, not an
-instruction to repeat a remote check. The loaded engineering/navigation/rules files
-matched that commit, and unrelated local changes were preserved. For future work,
-read the current local files and disclose relevant differences from this baseline.
+Historical provenance: the coding root observed on 2026-10-24 was
+`/home/pentagon-admin/Documents/apps/obsidian-vaults/coding`. This is an observed
+host location, not a required path. The shared revision used to establish this
+guide was **`0f3abe5374c5ad2ec4bd11fe4788819eb0c0e55d`**. Initial verification
+confirmed the skill was integrated into default branch `main`, with the feature
+branch at that same revision; no merge prerequisite remained. This records the
+original verification, not a request to repeat a remote check. Relevant loaded
+files matched that commit; unrelated local changes were preserved.
 
 ## Component responsibilities and sources of truth
 
@@ -134,8 +114,9 @@ Service discovery reports configured policy coverage, never running health.
 
 ## State transitions and recovery
 
-Shared design guidance: [State and recovery](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/state-and-recovery.md)
-and [Retries and idempotency](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/retries-and-idempotency.md).
+Vault references (coding-root relative):
+`common/engineering/references/state-and-recovery.md`
+and `common/engineering/references/retries-and-idempotency.md`.
 The records, transitions, crash windows, and recovery owners below describe this stack.
 
 ### Approval and execution
@@ -244,8 +225,8 @@ files, or rerun paid planning to repair delivery. See the existing
 
 ## Contracts and compatibility
 
-Shared compatibility and migration guidance:
-[Contracts and validation](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/contracts-and-validation.md).
+Vault reference (coding-root relative), for compatibility and migrations:
+`common/engineering/references/contracts-and-validation.md`.
 This section identifies the homelab contracts and their current readers.
 
 Externally consumed contracts include the [HTTP/approver API](../apps/hermes/README.md#stable-tool-api),
@@ -282,9 +263,10 @@ delivery. No versioned state migration/quarantine tooling exists in this reposit
 
 ## Errors, timeouts, and evidence
 
-Shared error/diagnostic guidance:
-[Errors and observability](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/errors-and-observability.md).
-Retry design belongs to [Retries and idempotency](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/retries-and-idempotency.md);
+Vault reference (coding-root relative), for errors/diagnostics:
+`common/engineering/references/errors-and-observability.md`.
+Retry design uses the same vault root:
+`common/engineering/references/retries-and-idempotency.md`;
 the budgets and retry behavior below are the implemented homelab values.
 
 Current error categories include INVALID_INPUT, UNAUTHORIZED, POLICY_DENIED,
@@ -315,6 +297,10 @@ limit for workflow polling or unconfirmed message sends, and no general jittered
 backoff; do not document one. Hermes model API retry configuration is separate
 from effect retry authorization; SOUL prohibits automatic uncertain write retries.
 
+### Restart verification
+
+For the per-layer deadlines, see the [budget table](#errors-timeouts-and-evidence).
+
 Docker acknowledgment means the restart endpoint accepted/completed its request.
 Verification separately reports `healthy`, `running_no_healthcheck`, `unhealthy`,
 `stopped`, `starting_timeout`, `unavailable`, or `not_attempted`. Even DONE with
@@ -335,10 +321,11 @@ state retention policy, or backup-success tool API exists here.
 
 ## Code organization and runtime instructions
 
-For conditions, mutations, extraction and module boundaries, read
-[Readability and boundaries](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/readability-and-boundaries.md);
+Vault references (coding-root relative): for conditions, mutations, extraction
+and module boundaries, read
+`common/engineering/references/readability-and-boundaries.md`;
 for refactor verification, read
-[Verification and change safety](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md).
+`common/engineering/references/verification-and-change-safety.md`.
 
 Local conventions are Node 24+ standard-library ESM (`.mjs`, `node:test`) and
 Python stdlib/unittest. MCP/Pydantic come from the installed Hermes environment.
@@ -378,7 +365,8 @@ within authorization. Documentation-only refresh needs no service restart.
 
 ## Verification matrix
 
-Use [Verification and change safety](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md)
+Use the Vault reference (coding-root relative)
+`common/engineering/references/verification-and-change-safety.md`
 for test selection, evidence reporting and task authorization. The matrix below
 provides this repository's commands and their limits; its unit checks require
 no production restart or paid model call. Node 24+, Python 3, Git, Docker/Compose
@@ -406,37 +394,15 @@ do not use restore/live application scripts as universal unit checks. Neither
 real Matrix approval events, a production restart, paid workflow, nor native
 memory acceptance is necessary to validate an ordinary code/documentation edit.
 
-### Validation of the initial documentation change (2026-10-24)
-
-No pre-existing AGENTS.md was found in this repository or its inspected ancestor
-directories. The shared vault's applicable navigation/rules were read and retained.
-The new files were checked against the implementation/tests linked above.
-
-- Node 24.14.1 `npm test`: **81 passed, 0 skipped**, including actual external
-  Knowledge Router retrieval and fake-socket restart deadlines. The initial
-  restricted-environment run failed at file level without useful diagnostics;
-  the rerun with local fixture socket access passed.
-- Adapter unittest: **7 passed**, including the existing runner with mocked model
-  boundary. Skill-checker unittest: **8 passed**.
-- Bridge unittest in a disposable no-network installed-image container:
-  **2 passed, 1 error**. The native `Tool` exposes `input_schema`, while the fixture
-  accesses `inputSchema`. Host Python lacks MCP/Pydantic; no dependencies installed.
-- Offline skill harness: **passed**, including installed native registration,
-  exact skill loading, all platform selections and production isolation checks.
-  Read-only deployed MCP handshake/discovery/Vaultwarden inspection: **passed**.
-- Compose quiet validation: **passed**. Read-only homelab snapshot check before
-  committing: **ready, unchanged, not stale** at the implementation revision above.
-  Committing changes Git revision metadata, which requires a later operator
-  refresh for `--check` to report current again; no production snapshot/index rebuilt.
-- Relative file/anchor links, command paths and whitespace were checked locally.
-  Paid/live skill behavior, native state-producing FlowForge preflight, Matrix
-  approval/attachment sends, service restarts/deployment and live acceptance were
-  **not run**. Prior reports were not substituted for these checks.
+Historical results, failures and checks not run for the initial 2026-10-24
+change are retained in the [initial engineering-instructions validation report](../reports/2026-10-24-engineering-instructions-validation.md).
+They are not evidence that validation was rerun for subsequent documentation edits.
 
 ## Component-specific rollout
 
-The [shared authorization/evidence rules](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md)
-apply to rollout. A documentation task alone does not authorize deployment here.
+The Vault reference (coding-root relative)
+`common/engineering/references/verification-and-change-safety.md`
+applies to rollout. A documentation task alone does not authorize deployment here.
 Determine affected services from Compose build
 contexts, mounts, environment and consumers. Check pending/approved/consumed
 approvals, relay `workflowPending`/delivery claims, adapter RUNNING records, and

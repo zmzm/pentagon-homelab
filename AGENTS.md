@@ -2,10 +2,10 @@
 
 ## Start here
 
-- Read [engineering guidance](docs/engineering.md) for invariants, state/recovery,
-  contracts, verification choices, rollout, and known gaps. Inspect the relevant
-  implementation and tests before editing; acceptance reports establish only
-  what was observed in their deployment.
+- Select only the guide sections relevant to the task using the table below;
+  do not load all of `docs/engineering.md` by default. For a small scoped edit,
+  start with the component map, the invariants here, and relevant code/tests.
+  Acceptance reports establish only what was observed in their deployment.
 - [Architecture](ARCHITECTURE.md), [services](SERVICES.md), and
   [operations](OPERATIONS.md) describe the homelab. The
   [Hermes guide](apps/hermes/README.md) is the detailed personal-agent API and
@@ -20,36 +20,39 @@
   delegates planning to the existing runner. Knowledge Router owns retrieval;
   the gateway's `*-vault.mjs` modules select sources and map citations.
 
+| Task | Guide section |
+| --- | --- |
+| Approvals or authorization | [Trust and authorization](docs/engineering.md#trust-and-authorization) |
+| State transitions or recovery | [State transitions and recovery](docs/engineering.md#state-transitions-and-recovery) |
+| API or persisted-state compatibility | [Contracts and compatibility](docs/engineering.md#contracts-and-compatibility) |
+| Restart verification | [Restart verification](docs/engineering.md#restart-verification) |
+| Workflow result delivery | [Result delivery](docs/engineering.md#result-delivery) |
+| Deployment or rollout | [Component-specific rollout](docs/engineering.md#component-specific-rollout) |
+
 ## Shared Coding Vault
 
-Locate `zmzm/obsidian-vaults` through the effective `CODING_VAULT_PATH` environment
-or `apps/hermes/.env` setting and the Compose vault mount/default; see
-[discovery and revision](docs/engineering.md#shared-guidance-and-provenance).
-Do not assume a fixed host path or print credentials while inspecting configuration.
-The configured path is the `coding` root: read its `AGENTS.md`, `index.md`,
-`common/INDEX.md`, `RULES.md`, and `common/engineering/SKILL.md`, then only the
-references needed for the task. The current local
-[engineering skill](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/SKILL.md)
-and its references are linked in the guide; load them from disk without remote
-fetches. Keep reusable principles in that vault: do not copy or paraphrase its
-sections into repository instructions. Link the relevant reference and retain
-only project-specific decisions, constraints, evidence, or explicit exceptions.
+When shared guidance is needed, use the single
+[coding-root discovery procedure](docs/engineering.md#shared-guidance-and-provenance)
+and retain the resolved root for the task. All **Vault paths** below are relative
+to that external coding root, not this repository. Read its applicable `AGENTS.md`
+and `common/engineering/SKILL.md`, then only the references relevant to the task;
+use its indexes for navigation when needed. Read actual local files, not just
+links or search excerpts. No remote fetch is needed for locally available guidance.
 
-Reference routing:
-
-| Task | Engineering reference under `common/engineering/references/` |
+| Task | Vault path (relative to resolved coding root) |
 | --- | --- |
-| Approval, execution, delivery state/recovery | `state-and-recovery.md` |
-| Retries, timeouts, uncertain effects | `retries-and-idempotency.md` |
-| API/configuration or persisted-state changes | `contracts-and-validation.md` |
-| Failure handling and diagnostics | `errors-and-observability.md` |
-| Structural refactoring | `readability-and-boundaries.md` |
-| Checks, rollout, evidence and authorization | `verification-and-change-safety.md` |
+| Approval, execution, delivery state/recovery | `common/engineering/references/state-and-recovery.md` |
+| Retries, timeouts, uncertain effects | `common/engineering/references/retries-and-idempotency.md` |
+| API/configuration or persisted-state changes | `common/engineering/references/contracts-and-validation.md` |
+| Failure handling and diagnostics | `common/engineering/references/errors-and-observability.md` |
+| Structural refactoring | `common/engineering/references/readability-and-boundaries.md` |
+| Checks, rollout, evidence and authorization | `common/engineering/references/verification-and-change-safety.md` |
 
-Read the actual files; a URL or search excerpt does not load their instructions.
-If unavailable, inspect existing behavior/tests, report the missing guidance and
-its effect on the task, and do not claim it was loaded. Preserve applicable
-nested instructions and unrelated user changes, including in sibling repositories.
+Keep reusable principles in the vault; link the relevant reference instead of
+copying or paraphrasing its sections into repository instructions. Retain local
+decisions, constraints, evidence, or explicit exceptions. If guidance is missing,
+report the limitation and inspect existing behavior/tests without claiming it
+was loaded. Preserve applicable nested instructions and unrelated user changes.
 
 ## Preserve these invariants
 
@@ -72,11 +75,9 @@ nested instructions and unrelated user changes, including in sibling repositorie
 
 ## Scope and delivery
 
-Use the shared [contracts](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/contracts-and-validation.md),
-[readability](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/readability-and-boundaries.md),
-and [verification/change-safety](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md)
-references for those rules. For homelab API/state changes, identify affected
-consumers and retained records in the compatibility assessment. Use the
+For shared engineering decisions, use the relevant vault reference above. For
+homelab API/state changes, identify affected consumers and retained records in
+the compatibility assessment. Use the
 [verification matrix](docs/engineering.md#verification-matrix) for component checks
 and their evidence limits; unit checks do not require live service restarts or
 paid calls. Report actual check scope and distinguish implementation, testing,
