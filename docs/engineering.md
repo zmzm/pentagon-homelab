@@ -17,6 +17,12 @@ from the local checkout. This document records its project-specific application.
 Read the actual local skill and relevant references; a link or retrieval snippet
 alone does not load their instructions.
 
+When maintaining these repository instructions, keep reusable rules in the vault.
+Replace overlapping guidance with a local reference, not a copied or paraphrased
+section. Retain the homelab-specific decision, implementation evidence, operating
+constraint, or explicit exception and its reason. If a section has no such local
+content, omit it and route to the relevant vault reference.
+
 The verified checkout configured by `apps/hermes/.env` on this host is:
 
 ```text
@@ -128,6 +134,10 @@ Service discovery reports configured policy coverage, never running health.
 
 ## State transitions and recovery
 
+Shared design guidance: [State and recovery](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/state-and-recovery.md)
+and [Retries and idempotency](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/retries-and-idempotency.md).
+The records, transitions, crash windows, and recovery owners below describe this stack.
+
 ### Approval and execution
 
 The gateway stores one JSON record per UUID in `/state/approvals`; it appends
@@ -234,13 +244,16 @@ files, or rerun paid planning to repair delivery. See the existing
 
 ## Contracts and compatibility
 
+Shared compatibility and migration guidance:
+[Contracts and validation](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/contracts-and-validation.md).
+This section identifies the homelab contracts and their current readers.
+
 Externally consumed contracts include the [HTTP/approver API](../apps/hermes/README.md#stable-tool-api),
 the nine [MCP schemas](../apps/hermes/gateway_mcp.py), policy/configuration fields,
 broker POST `/execute`, adapter GET `/tasks`, POST `/run`, GET `/runs/:id`,
 Matrix commands/reactions/file events, operator CLI, and Knowledge Router CLI
 arguments/results/citation metadata. Most success responses wrap `data`;
-APPROVAL_REQUIRED is a failure-shaped HTTP 200 with ID/expiry. Avoid changing
-response nesting, enum meanings, units, or tool defaults without checking consumers.
+APPROVAL_REQUIRED is a failure-shaped HTTP 200 with ID/expiry.
 
 | Stored format | Current reader behavior and limits |
 | --- | --- |
@@ -260,23 +273,24 @@ relay, and adapter flush/fsync their local records; knowledge publication uses
 rename without explicit fsync and claims atomic publication, not equivalent
 power-loss durability.
 
-**Required practice for changes:** assess old records, malformed/unknown records,
-all producers/consumers, mixed-version rollout and rollback before altering
-states, field meaning, response shapes or stored files. Define missing/null/unknown
-behavior. If migration is needed, back up state, specify versioned reader/writer
-order, migrate with processing quiesced where necessary, verify readback, and
-describe rollback to a reader that understands the retained format. Never
-rollback by deleting claims or restoring old state that makes completed actions
-appear executable. Full schemas/quarantine/migrations are proposals below,
-not capabilities to assume today.
+For a contract change here, the compatibility assessment must identify the
+MCP bridge, gateway, broker, adapter, relay, or snapshot-v1 reader affected and
+which retained records each rollout/rollback version can read. A state migration
+must preserve `CONSUMED`, `executionAttempted`, media URIs and acknowledged event
+IDs: restoring an older executable claim can repeat a Docker write, paid run, or
+delivery. No versioned state migration/quarantine tooling exists in this repository.
 
 ## Errors, timeouts, and evidence
 
-Preserve safe categories such as INVALID_INPUT, UNAUTHORIZED, POLICY_DENIED,
+Shared error/diagnostic guidance:
+[Errors and observability](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/errors-and-observability.md).
+Retry design belongs to [Retries and idempotency](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/retries-and-idempotency.md);
+the budgets and retry behavior below are the implemented homelab values.
+
+Current error categories include INVALID_INPUT, UNAUTHORIZED, POLICY_DENIED,
 APPROVAL_REQUIRED, INVALID_APPROVAL, UPSTREAM_FAILED/UNAVAILABLE,
 RESTART_UNCERTAIN, INTERRUPTED_REVIEW_REQUIRED and MATRIX_UPLOAD_UNCONFIRMED.
-Unknown failures are translated to bounded generic codes. Do not expose raw
-upstream errors, tracebacks, environment/configuration, or credentials to Matrix.
+Gateway, broker and relay boundaries translate unknown failures to generic codes.
 Gateway redacts sensitive field names, known credential values and common secret
 patterns; broker inspection returns selected state only, and logs redact known
 container-env secrets. Arbitrary unlabeled secrets can escape pattern redaction:
@@ -321,16 +335,17 @@ state retention policy, or backup-success tool API exists here.
 
 ## Code organization and runtime instructions
 
-**Recommended practice:** follow Node 24+ standard-library ESM (`.mjs`, `node:test`)
-and Python stdlib/unittest conventions. MCP/Pydantic come from the installed
-Hermes environment. The custom [gateway Dockerfile](../apps/flowforge-gateway/Dockerfile)
-uses Node Alpine; the [adapter Dockerfile](../apps/flowforge/Dockerfile) adds
-Python/git on Node Debian. Keep readable conditions, explicit state mutations,
-and effect ordering visible. Separate transport parsing, domain decisions and
-persistence when their coupling makes maintenance difficult; small functions
-can provide that boundary. No arbitrary file-length rule, mandatory framework,
-universal class layer, or JavaScript-to-TypeScript rewrite is required. Preserve
-behavior when refactoring and separate structural work from features where practical.
+For conditions, mutations, extraction and module boundaries, read
+[Readability and boundaries](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/readability-and-boundaries.md);
+for refactor verification, read
+[Verification and change safety](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md).
+
+Local conventions are Node 24+ standard-library ESM (`.mjs`, `node:test`) and
+Python stdlib/unittest. MCP/Pydantic come from the installed Hermes environment.
+The [gateway Dockerfile](../apps/flowforge-gateway/Dockerfile) uses Node Alpine;
+the [adapter Dockerfile](../apps/flowforge/Dockerfile) adds Python/git on Node Debian.
+This repository does not require a new framework, class hierarchy, TypeScript
+migration, or file-length ceiling for structural work.
 
 [Root AGENTS](../AGENTS.md) and this guide instruct development agents; they are
 not mounted as the running Hermes identity. Compose mounts `config.yaml`,
@@ -363,10 +378,11 @@ within authorization. Documentation-only refresh needs no service restart.
 
 ## Verification matrix
 
-Select checks for the affected boundary and risk. Read commands before running;
-unit validation needs no live service restart or paid model call. Node 24+,
-Python 3, Git, Docker/Compose and external checkout dependencies apply only to
-the rows using them. Report passed/failed/skipped/unverified with actual scope.
+Use [Verification and change safety](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md)
+for test selection, evidence reporting and task authorization. The matrix below
+provides this repository's commands and their limits; its unit checks require
+no production restart or paid model call. Node 24+, Python 3, Git, Docker/Compose
+and external checkout dependencies apply only to the rows using them.
 
 | Check / working directory | Existing command | Prerequisites and evidence limits |
 | --- | --- | --- |
@@ -390,7 +406,7 @@ do not use restore/live application scripts as universal unit checks. Neither
 real Matrix approval events, a production restart, paid workflow, nor native
 memory acceptance is necessary to validate an ordinary code/documentation edit.
 
-### Validation of this documentation change (2026-10-24)
+### Validation of the initial documentation change (2026-10-24)
 
 No pre-existing AGENTS.md was found in this repository or its inspected ancestor
 directories. The shared vault's applicable navigation/rules were read and retained.
@@ -419,8 +435,9 @@ The new files were checked against the implementation/tests linked above.
 
 ## Component-specific rollout
 
-These are operator instructions **when deployment is authorized**, not actions
-implied by writing documentation. Determine affected services from Compose build
+The [shared authorization/evidence rules](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md)
+apply to rollout. A documentation task alone does not authorize deployment here.
+Determine affected services from Compose build
 contexts, mounts, environment and consumers. Check pending/approved/consumed
 approvals, relay `workflowPending`/delivery claims, adapter RUNNING records, and
 Hermes conversations/cron work before interrupting processing. Use protected
@@ -452,9 +469,9 @@ for only the required service(s). Bind-mounted/config-only changes may require
 review readiness/failures, with sensitive evidence kept private. `--wait` only
 checks configured health/running criteria; the gateway health endpoint alone
 does not establish dependency readiness. Read-only registration/smoke checks
-verify relevant integration without approving a mutation. Record implementation,
-test evidence, deployed version, and live acceptance separately; a successful
-Compose invocation does not establish all four.
+verify relevant integration without approving a mutation. Gateway liveness,
+read-only Vaultwarden inspection and Matrix approval/attachment acceptance are
+distinct checks in this stack; the matrix records what each exercises.
 
 ## Current gaps and follow-up decisions
 

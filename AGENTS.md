@@ -28,7 +28,14 @@ or `apps/hermes/.env` setting and the Compose vault mount/default; see
 Do not assume a fixed host path or print credentials while inspecting configuration.
 The configured path is the `coding` root: read its `AGENTS.md`, `index.md`,
 `common/INDEX.md`, `RULES.md`, and `common/engineering/SKILL.md`, then only the
-references needed for the task:
+references needed for the task. The current local
+[engineering skill](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/SKILL.md)
+and its references are linked in the guide; load them from disk without remote
+fetches. Keep reusable principles in that vault: do not copy or paraphrase its
+sections into repository instructions. Link the relevant reference and retain
+only project-specific decisions, constraints, evidence, or explicit exceptions.
+
+Reference routing:
 
 | Task | Engineering reference under `common/engineering/references/` |
 | --- | --- |
@@ -65,13 +72,15 @@ nested instructions and unrelated user changes, including in sibling repositorie
 
 ## Scope and delivery
 
-Assess API and stored-record compatibility explicitly. Prefer readable conditions
-and explicit mutations, following existing Node ESM/Python conventions; separate
-behavior-preserving refactors from features where practical.
-Run component-appropriate checks from the [verification matrix](docs/engineering.md#verification-matrix)
-and report actual passes, failures, skips, and evidence limits. Do not run every
-suite for every edit. Separate implementation, testing, deployment, and live
-acceptance. Respect the user's existing task authorization: continue routine
-authorized work without repeated approval requests; documentation alone does
-not authorize deployment, service restarts, paid calls, index rebuilds, or
-manufactured Matrix user events/session resets.
+Use the shared [contracts](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/contracts-and-validation.md),
+[readability](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/readability-and-boundaries.md),
+and [verification/change-safety](/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/common/engineering/references/verification-and-change-safety.md)
+references for those rules. For homelab API/state changes, identify affected
+consumers and retained records in the compatibility assessment. Use the
+[verification matrix](docs/engineering.md#verification-matrix) for component checks
+and their evidence limits; unit checks do not require live service restarts or
+paid calls. Report actual check scope and distinguish implementation, testing,
+deployment and live acceptance. Continue work within existing task authorization
+without repeated permission requests. Documentation alone does not authorize
+service deployment/restarts, paid calls, index rebuilds, or Matrix user events
+and session resets.
