@@ -166,7 +166,7 @@ test('project selection uses distinct vaults and snapshot caches, forwards scope
   policy.projects.homelab = resolve(f.root,'missing');
   await assert.rejects(execute('knowledge.search',args), /KNOWLEDGE_PROJECT_NOT_READY/);
   assert.throws(() => operation('knowledge.search',{query:'x',project:'unknown'},policy), /PROJECT_NOT_CONFIGURED/);
-  const configured = validatePolicy(JSON.parse(await readFile(resolve(repo,'apps/flowforge-gateway/policy.example.json'),'utf8')));
+  const configured = validatePolicy(JSON.parse(await readFile(resolve(repo,'apps/pentagon-gateway/policy.example.json'),'utf8')));
   assert.deepEqual(configured.projects,{mentory:'/vaults/mentory',default:'/vaults/coding',homelab:'/vaults/homelab'});
 });
 

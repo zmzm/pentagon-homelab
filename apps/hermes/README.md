@@ -27,7 +27,7 @@ The host currently cannot enforce Docker memory limits; configured limits are ad
 ## Components and boundaries
 
 ```text
-Matrix / GLM ← egress → Hermes → MCP stdio bridge → flowforge-gateway
+Matrix / GLM ← egress → Hermes → MCP stdio bridge → pentagon-gateway
 Matrix ← egress → trusted approval listener ───────────────┘
                                       gateway ├─ Knowledge Router CLI + read-only vault
                                               ├─ private upstream → FlowForge planning API
@@ -67,11 +67,11 @@ From `apps/hermes`, use the private `.env` based on `.env.example` (mode 600).
 - `GATEWAY_TOKEN`, `APPROVER_TOKEN`, `BROKER_TOKEN`, `FLOWFORGE_TOKEN`: four distinct random tokens, at least 32 characters. Generate with `openssl rand -hex 32`.
 - `DOCKER_GID`: host socket group from `stat -c %g /var/run/docker.sock` (984 on this host).
 - `FLOWFORGE_URL`: `http://flowforge-api:8082`.
-- `KNOWLEDGE_ROUTER_PATH`, `CODING_VAULT_PATH`, `FLOWFORGE_PATH`, `MENTORY_PROJECT_PATH`, `OPENCODE_BINARY`: existing source paths, documented in the example.
+- `KNOWLEDGE_ROUTER_PATH`, `CODING_VAULT_PATH`, `FLOWFORGE_PATH`, `FLOWFORGE_AGENT_LIBRARY_PATH`, `MENTORY_PROJECT_PATH`, `OPENCODE_BINARY`: existing source paths, documented in the example.
 
 Build the Mentory and homelab source projections using the refresh commands in
 **Knowledge scope, audit and metrics** below before starting the gateway.
-Create `data/hermes`, `data/flowforge-gateway`, `data/matrix-approvals` and
+Create `data/hermes`, `data/pentagon-gateway`, `data/matrix-approvals` and
 `data/flowforge-api`. The three custom-service state directories must be writable by
 UID/GID 1000 with mode 700. Build the existing Knowledge Router with its own `npm ci` and
 `npm run build`; its pure-JavaScript runtime dependencies and `dist` must be available.
@@ -79,7 +79,7 @@ Do not overwrite an existing `.env` with the example: it contains live credentia
 
 ```bash
 docker compose config --quiet
-docker compose build flowforge-gateway matrix-approvals flowforge-api homelab-broker
+docker compose build pentagon-gateway matrix-approvals flowforge-api homelab-broker
 docker compose up -d
 docker compose ps
 ```
@@ -88,6 +88,63 @@ MCP SDK 2.x uses `MCPServer`; the bridge also supports v1's `FastMCP`. Hermes fi
 child-process environment: `mcp_servers.personal.env` explicitly forwards only the gateway
 token and URL using native interpolation. A direct bridge test alone misses this boundary.
 Core configuration, identity and bridge files are read-only mounts.
+
+## Pentagon Gateway rename
+
+The Hermes tool gateway is **Pentagon Gateway** (`pentagon-gateway`). FlowForge
+remains the separate task runner and planning API (`flowforge-api`); its
+`FLOWFORGE_*` settings, `/flowforge/*` routes and `flowforge_*` MCP tools are unchanged.
+The gateway source/package, Compose service, internal DNS name and private state
+path are now `apps/pentagon-gateway`, `pentagon-gateway`,
+`http://pentagon-gateway:8080` and `data/pentagon-gateway` respectively.
+
+For an existing deployment with the old `flowforge-gateway` service, perform one
+coordinated cutover from `apps/hermes` after checking active Hermes conversations,
+cron work, pending approvals, relay deliveries and planning runs. Let active work
+finish first. Build and validate before interruption:
+
+```bash
+docker compose config --quiet
+docker compose build pentagon-gateway matrix-approvals
+```
+
+Stop the callers and broker, then the old gateway. Move the existing private state
+directory on the same filesystem, preserving all approval claims, audit records,
+caches, ownership and permissions. The destination must not exist. Do not create
+an empty replacement or overwrite records with an older snapshot.
+
+```bash
+docker compose stop hermes matrix-approvals homelab-broker
+docker stop personal-agent-flowforge-gateway-1
+test -d ../../data/flowforge-gateway && test ! -e ../../data/pentagon-gateway && mv ../../data/flowforge-gateway ../../data/pentagon-gateway
+docker compose up -d --no-deps --wait pentagon-gateway homelab-broker
+docker compose up -d --no-deps --force-recreate hermes matrix-approvals
+```
+
+The container name above belongs to the existing `personal-agent` Compose project.
+Verify gateway health, native tool registration, MCP discovery/read-only inspection
+and retained state before removing the stopped old gateway:
+
+```bash
+docker compose exec -T hermes python - < ../../scripts/verify_hermes_tool_registration.py
+docker compose exec -T hermes python - < ../../scripts/verify_hermes_mcp.py
+docker compose ps
+docker rm personal-agent-flowforge-gateway-1
+```
+
+The broker reloads its relocated policy mount; the relay and Hermes reload the new
+gateway URL. The planning API and production task runner are unaffected.
+Credentials, policy contents, HTTP/MCP contracts, native Hermes state and persisted
+record formats are unchanged. Historical deployment reports retain service names
+used at the time. Refresh/check the homelab knowledge projection after updating
+documentation, using the commands below.
+
+For rollback, stop the new callers/broker/gateway, move the **current** state back
+to `data/flowforge-gateway`, restore the previous source paths and Compose/bridge
+configuration, and start the previous services. Preserve any records written since
+cutover; never restore stale approvals or delivery claims. Do not run both gateway
+instances against the same state directory.
+
 
 ## Curated native skills
 
@@ -443,8 +500,8 @@ reply claiming to be the user is not evidence of approval.
 Operator CLI fallback remains available:
 
 ```bash
-docker compose exec flowforge-gateway node /integration/operator.mjs
-docker compose exec -e OPERATOR=your-name flowforge-gateway node /integration/operator.mjs APPROVAL_UUID approve
+docker compose exec pentagon-gateway node /integration/operator.mjs
+docker compose exec -e OPERATOR=your-name pentagon-gateway node /integration/operator.mjs APPROVAL_UUID approve
 ```
 
 The fallback marks approval only; Matrix-approved requests are executed automatically by
@@ -507,9 +564,9 @@ the gateway test suite with Node 24+ first. Before a later rollout, let in-fligh
 requests finish and preserve both gateway and relay state directories. From `apps/hermes`:
 
 ```bash
-docker compose build homelab-broker flowforge-gateway matrix-approvals
-docker compose up -d --no-deps homelab-broker flowforge-gateway matrix-approvals
-docker compose ps homelab-broker flowforge-gateway matrix-approvals
+docker compose build homelab-broker pentagon-gateway matrix-approvals
+docker compose up -d --no-deps homelab-broker pentagon-gateway matrix-approvals
+docker compose ps homelab-broker pentagon-gateway matrix-approvals
 ```
 
 Keep one gateway and one relay replica. Check their health and logs without submitting
@@ -551,6 +608,89 @@ Success is `{success:true,data:...}`; failures use `{success:false,error:"CODE",
 Approval-required is a tool-level failure with HTTP 200. Other errors use 4xx/5xx. Inputs
 are limited to 64 KiB; upstream results to 128 KiB; normal upstream calls to 30 seconds.
 Long planning jobs acknowledge promptly and expose status. No automatic write retries.
+
+### FlowForge task-analysis: isolated planning and approvals
+
+For FlowForge (flow-forge) planning questions, retrieve this operational guidance
+with `knowledge_search(project="homelab")`. Use `project="mentory"` for completed
+Mentory history and `project="default"` for coding guidance; neither replaces live
+task discovery. The current Hermes tool workflow is `task-analysis` for Mentory.
+It runs exactly `concept` then `grounded`, producing `concept-plan.md` and
+`grounded-plan.md`. It does not execute the implementation step, edit Mentory's
+source repository, change the production task queue or start its scheduled runner.
+
+1. Discover workflows with `flowforge_list_workflows` and tasks with
+   `flowforge_list_tasks` before proposing planning. Use the returned task ID and
+   exact `task_sha256`. Task discovery applies the current-month gate to automatic
+   todo selection and separately lists upcoming tasks and recent completions.
+   An empty eligible list is not an empty production queue. Future tasks need an
+   explicit user choice; never choose or invent another ID/hash on the user's behalf.
+2. For a user-requested analysis, request `flowforge_run` with
+   `workflow="task-analysis"` and `input={project:"mentory",task_id,task_sha256}`.
+   Optional `input.context` is at most 5,000 characters of concise retrieved
+   references with their original citations. Do not use `knowledge_context`.
+3. Preserve the conversation's stable `session_id` and original `user_request`.
+   The submission requires exact-action Matrix approval. On `APPROVAL_REQUIRED`,
+   stop and leave execution to the trusted listener; plain chat assent is not
+   approval. Never submit a duplicate while approval or execution is pending.
+4. Once a run ID exists, inspect that same run with `flowforge_get_run` when
+   needed. Avoid tight polling loops; the listener already polls and delivers
+   the result to the approval room. Submission or `RUNNING` is not completion.
+
+### FlowForge central agents and 15-minute timeouts
+
+Each accepted planning request copies the tracked source and selected task into
+its own read-only source snapshot, private queue and writable plan-output directory.
+The adapter reads `concept-plan` and `grounded-hard` from FlowForge's central agent
+library (`FLOWFORGE_AGENT_LIBRARY_PATH`), rather than Mentory's project copies.
+Existing step-specific model overrides are preserved. There is one planning run
+at a time, no waiting queue, and a 900-second (15-minute) timeout for each step.
+
+Permissions allow the designated plans, source reading/search and the configured
+Knowledge Router command. Project plugins and execution agents are excluded.
+Serena MCP is disabled in this isolated adapter; grounding uses ordinary code
+reading/search. Host Mentory's separate Serena configuration is unaffected.
+These are documented adapter boundaries, not a general sandbox guarantee.
+
+The adapter update was deployed on 2026-10-26. Gateway task listing and a native
+OpenCode preflight verified allowed task reads/designated plan writes and denied
+outside reads, undesignated writes and arbitrary shell. This used no model call
+and left the production queue unchanged. Those checks do not establish a new paid
+planning run or live Matrix attachment delivery on this version.
+
+### FlowForge host CLI and production task execution
+
+The standalone host installation additionally supports registered projects,
+shared workflows, central agents, task-directory synchronization and full task
+execution. Its default workflow is `concept` → `grounded` → `execution`.
+The registered Mentory project uses the existing JSONL queue; `--sync` is for
+directory-source projects, not that registration. Opening the TUI or calling
+`flowforge doctor --project mentory --json` and
+`flowforge status --project mentory --json` does not run a task.
+
+Host task execution is a separate operator action. Hermes's current tools expose
+only the isolated Mentory planning adapter; they do not expose the host CLI,
+arbitrary project selection, synchronization, task resets or full implementation.
+For a full execution or another project, explain the available boundary and the
+need for an operator or a separately reviewed tool/policy extension. Do not replace
+an analysis request with the host three-step workflow or imply that planning marks
+the production task done. Existing headless schedules remain independent.
+
+### FlowForge status, failures and result delivery
+
+`flowforge_get_run` reports `RUNNING`, `DONE` or `FAILED`. Interrupted runs become
+failed for review and are not replayed automatically. Changed task bytes require
+new discovery/review; a busy adapter is not an accepted queued job. A missing
+central planning agent, invalid private workflow or disallowed task-agent override
+fails rather than falling back to a broader workflow. Report failed or uncertain
+writes for operator review; do not retry a paid planning request automatically.
+
+After completion, the trusted listener delivers the gateway-sanitized plans as
+Markdown attachments and a deterministic notice. Planning completion and attachment
+delivery are separate outcomes. Preserve the run ID and approval state if delivery
+fails; delivery repair must not resubmit the planning run. For the delivery procedure,
+see [Planning result delivery](#planning-result-delivery). This guidance does not
+add any execution tools, approval authority or service-restart permission.
 
 ### Service discovery and rollout
 
@@ -595,8 +735,8 @@ and deploy from `apps/hermes` using the existing private `.env` and policy:
 
 ```bash
 docker compose config --quiet
-docker compose build flowforge-gateway
-docker compose up -d --no-deps flowforge-gateway
+docker compose build pentagon-gateway
+docker compose up -d --no-deps pentagon-gateway
 ```
 
 Wait for the gateway health check to pass, then recreate Hermes so its MCP
@@ -690,8 +830,8 @@ Compose, then build/recreate **only** the gateway and Hermes from `apps/hermes`:
 
 ```bash
 docker compose config --quiet
-docker compose build flowforge-gateway
-docker compose up -d --no-deps --force-recreate flowforge-gateway hermes
+docker compose build pentagon-gateway
+docker compose up -d --no-deps --force-recreate pentagon-gateway hermes
 ```
 
 This picks up the new read-only mount, policy, MCP description and SOUL instructions.
@@ -723,7 +863,7 @@ not implemented. Results expose the generation date; changes after refresh are n
 `scope` remains router path hints, not a filesystem access boundary. The CLI uses argv
 rather than a shell, a minimal child environment and an external cache under gateway state.
 
-`data/flowforge-gateway/audit.jsonl` has durable start/final events, timestamp, session,
+`data/pentagon-gateway/audit.jsonl` has durable start/final events, timestamp, session,
 request, tool, arguments, result, approval flag, duration and verified approval evidence.
 An unavailable audit sink blocks execution. Count final events rather than start events
 when counting completed calls. Pending/terminal approval records preserve exact arguments
@@ -745,7 +885,7 @@ back it up with existing tooling; do not change its timers as part of this PoC.
 From the homelab root with Node 24+:
 
 ```bash
-cd apps/flowforge-gateway && npm test
+cd apps/pentagon-gateway && npm test
 ```
 
 From the homelab root:

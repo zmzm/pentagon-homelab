@@ -19,7 +19,12 @@ project, task_dir = adapter.prepare_job({'project': 'mentory', **description}, t
 adapter.write_json(folder / 'status.json', {'task_id': description['task_id'], 'status': 'RUNNING'})
 
 
-def validate_only(**_kwargs):
+def validate_only(**kwargs):
+    context = kwargs['context']
+    assert context.step_timeout == 900
+    assert context.workspace == project.resolve()
+    assert context.tasks_file == (folder / 'tasks.jsonl').resolve()
+    assert [step['id'] for step in context.steps()] == ['concept', 'grounded']
     # The existing runner's model call is never invoked in this preflight.
     result = subprocess.run(['/usr/local/bin/opencode', 'debug', 'config'], cwd=project,
                             capture_output=True, text=True, timeout=45)

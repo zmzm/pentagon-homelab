@@ -1,5 +1,5 @@
 {
-  "name": "flowforge-gateway",
+  "name": "pentagon-gateway",
   "private": true,
   "type": "module",
   "engines": {"node": ">=24"},

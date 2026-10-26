@@ -102,7 +102,7 @@ homelab/
 │   ├── caddy
 │   ├── cloudflared
 │   ├── flowforge
-│   ├── flowforge-gateway
+│   ├── pentagon-gateway
 │   ├── hermes
 │   ├── homepage
 │   ├── matrix

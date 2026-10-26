@@ -1,4 +1,7 @@
-# FlowForge gateway
+# Pentagon Gateway
+
+Pentagon Gateway is the Hermes tool gateway. FlowForge is the separate task runner;
+its workflow API and tool names retain their existing names.
 
 Portable REST boundary for Knowledge Router, existing FlowForge workflows and constrained
 Docker operations. Uses Node.js 24+ standard library only. Hermes connects through the

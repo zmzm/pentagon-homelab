@@ -12,10 +12,10 @@
   operating reference; [Compose](apps/hermes/docker-compose.yml) defines deployment.
 - Component map: [Hermes](apps/hermes) owns conversation, native memory, skills,
   and conversational schedules; its Python MCP bridge calls the
-  [gateway](apps/flowforge-gateway/src/server.mjs), which owns tool contracts,
-  policy, approvals, and audit. The [broker](apps/flowforge-gateway/src/broker.mjs)
+  [gateway](apps/pentagon-gateway/src/server.mjs), which owns tool contracts,
+  policy, approvals, and audit. The [broker](apps/pentagon-gateway/src/broker.mjs)
   alone handles Docker for this stack. The
-  [Matrix relay](apps/flowforge-gateway/src/matrix-approvals.mjs) verifies approval
+  [Matrix relay](apps/pentagon-gateway/src/matrix-approvals.mjs) verifies approval
   events and delivers results. The [FlowForge adapter](apps/flowforge/adapter.py)
   delegates planning to the existing runner. Knowledge Router owns retrieval;
   the gateway's `*-vault.mjs` modules select sources and map citations.

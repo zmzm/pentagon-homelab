@@ -1,5 +1,8 @@
 # Policy-backed service discovery: deployment and verification
 
+Historical service name: `flowforge-gateway` in this record is now
+[`pentagon-gateway`](../apps/hermes/README.md#pentagon-gateway-rename).
+
 On 2026-10-22, the user authorized deployment of the new read-only
 `homelab_list_services` operation. Verification completed at 19:09 UTC
 (21:09 Europe/Warsaw). The implementation was subsequently committed and pushed

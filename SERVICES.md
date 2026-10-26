@@ -72,9 +72,9 @@ ports. Their source and persistent data are separate from the core services.
 | Component | Purpose | Source | Data location |
 | --- | --- | --- | --- |
 | Hermes | Matrix conversation, CLI and conversational schedules | `apps/hermes` | `data/hermes` |
-| FlowForge gateway | Authenticated tool API, policy discovery, audit and approvals | `apps/flowforge-gateway` | `data/flowforge-gateway` |
-| Homelab broker | Allowlisted Docker inspection, logs and restart execution | `apps/flowforge-gateway` | none |
-| Matrix approval listener | Trusted approval verification, exact-action execution and sanitized planning-result attachments | `apps/flowforge-gateway` | `data/matrix-approvals` |
+| Pentagon Gateway | Authenticated tool API, policy discovery, audit and approvals | `apps/pentagon-gateway` | `data/pentagon-gateway` |
+| Homelab broker | Allowlisted Docker inspection, logs and restart execution | `apps/pentagon-gateway` | none |
+| Matrix approval listener | Trusted approval verification, exact-action execution and sanitized planning-result attachments | `apps/pentagon-gateway` | `data/matrix-approvals` |
 | FlowForge planning API | Planning around the existing workflow runner | `apps/flowforge` | `data/flowforge-api` |
 
 `homelab_list_services` reports configured tool coverage from gateway policy,

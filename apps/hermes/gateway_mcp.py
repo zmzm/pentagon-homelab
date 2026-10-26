@@ -1,4 +1,4 @@
-"""Thin MCP transport; policy and approvals belong to flowforge-gateway."""
+"""Thin MCP transport; policy and approvals belong to pentagon-gateway."""
 import json
 import os
 import urllib.error
@@ -14,7 +14,7 @@ except ModuleNotFoundError as error:
     from mcp.server.fastmcp import FastMCP as MCPServer
 
 mcp = MCPServer("personal-platform")
-BASE = os.environ.get("GATEWAY_URL", "http://flowforge-gateway:8080")
+BASE = os.environ.get("GATEWAY_URL", "http://pentagon-gateway:8080")
 TOKEN = os.environ["GATEWAY_TOKEN"]
 
 

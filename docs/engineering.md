@@ -57,11 +57,11 @@ files matched that commit; unrelated local changes were preserved.
 | --- | --- | --- |
 | Hermes | Conversation, native memory/session search, curated native skills, new conversational schedules. [Configuration](../apps/hermes/config.yaml), [SOUL](../apps/hermes/SOUL.md), [diagnosis skill](../apps/hermes/skills/homelab-service-diagnosis/SKILL.md), [selection plugin](../apps/hermes/plugins/homelab-skill-tools/__init__.py) | [Runtime/API guide](../apps/hermes/README.md), [bridge tests](../apps/hermes/test_gateway_mcp.py) and registration scripts below |
 | MCP bridge | Nine Python stdio tools forwarding HTTP; no independent permission authority. [gateway_mcp.py](../apps/hermes/gateway_mcp.py) | Bridge tests; effective installed CLI/Matrix/cron selection |
-| Personal gateway | Tool contracts, input validation, policy, persisted approvals, write-start/final audit, metrics. [server.mjs](../apps/flowforge-gateway/src/server.mjs), [operations.mjs](../apps/flowforge-gateway/src/operations.mjs), [common.mjs](../apps/flowforge-gateway/src/common.mjs) | [Policy actually mounted by Compose](../apps/flowforge-gateway/policy.example.json), [gateway tests](../apps/flowforge-gateway/test/gateway.test.mjs) |
-| Docker broker | Narrow authenticated inspect/log/restart integration. [broker.mjs](../apps/flowforge-gateway/src/broker.mjs), [restart.mjs](../apps/flowforge-gateway/src/restart.mjs) | [Restart tests](../apps/flowforge-gateway/test/restart.test.mjs) and gateway broker fixtures |
+| Personal gateway | Tool contracts, input validation, policy, persisted approvals, write-start/final audit, metrics. [server.mjs](../apps/pentagon-gateway/src/server.mjs), [operations.mjs](../apps/pentagon-gateway/src/operations.mjs), [common.mjs](../apps/pentagon-gateway/src/common.mjs) | [Policy actually mounted by Compose](../apps/pentagon-gateway/policy.example.json), [gateway tests](../apps/pentagon-gateway/test/gateway.test.mjs) |
+| Docker broker | Narrow authenticated inspect/log/restart integration. [broker.mjs](../apps/pentagon-gateway/src/broker.mjs), [restart.mjs](../apps/pentagon-gateway/src/restart.mjs) | [Restart tests](../apps/pentagon-gateway/test/restart.test.mjs) and gateway broker fixtures |
 | FlowForge adapter | Planning-only wrapper around existing `pipeline_runner.run_selected_task`; source snapshots, run records, private task queue. [adapter.py](../apps/flowforge/adapter.py) | [Adapter guide](../apps/flowforge/README.md), [tests](../apps/flowforge/test_adapter.py), mounted external runner/steps/agent definitions |
-| Matrix relay | Trusted approval-event filtering, stored-action execution request, polling and sanitized result delivery. [matrix-approvals.mjs](../apps/flowforge-gateway/src/matrix-approvals.mjs) | [Approval tests](../apps/flowforge-gateway/test/matrix-approvals.test.mjs), [delivery tests](../apps/flowforge-gateway/test/workflow-delivery.test.mjs) |
-| Knowledge Router / projections | Existing external CLI owns ranking/retrieval. [project-vault.mjs](../apps/flowforge-gateway/src/project-vault.mjs) and [homelab-vault.mjs](../apps/flowforge-gateway/src/homelab-vault.mjs) select sources, publish snapshots, translate citations | [Project tests](../apps/flowforge-gateway/test/project-vault.test.mjs), [homelab tests](../apps/flowforge-gateway/test/homelab-vault.test.mjs), external CLI selected by `KNOWLEDGE_CLI` |
+| Matrix relay | Trusted approval-event filtering, stored-action execution request, polling and sanitized result delivery. [matrix-approvals.mjs](../apps/pentagon-gateway/src/matrix-approvals.mjs) | [Approval tests](../apps/pentagon-gateway/test/matrix-approvals.test.mjs), [delivery tests](../apps/pentagon-gateway/test/workflow-delivery.test.mjs) |
+| Knowledge Router / projections | Existing external CLI owns ranking/retrieval. [project-vault.mjs](../apps/pentagon-gateway/src/project-vault.mjs) and [homelab-vault.mjs](../apps/pentagon-gateway/src/homelab-vault.mjs) select sources, publish snapshots, translate citations | [Project tests](../apps/pentagon-gateway/test/project-vault.test.mjs), [homelab tests](../apps/pentagon-gateway/test/homelab-vault.test.mjs), external CLI selected by `KNOWLEDGE_CLI` |
 
 [Architecture](../ARCHITECTURE.md), [services](../SERVICES.md),
 [operations](../OPERATIONS.md), and [recovery](../RECOVERY_CHECKLIST.md) cover
@@ -122,7 +122,7 @@ The records, transitions, crash windows, and recovery owners below describe this
 ### Approval and execution
 
 The gateway stores one JSON record per UUID in `/state/approvals`; it appends
-redacted JSONL audit entries. [Server](../apps/flowforge-gateway/src/server.mjs)
+redacted JSONL audit entries. [Server](../apps/pentagon-gateway/src/server.mjs)
 saves via flushed temporary file, rename, and parent-directory fsync. Audit
 entries use flushed appends. This orders local evidence around effects; it is
 not a transaction with Docker, Matrix, or FlowForge, and does not establish
@@ -329,7 +329,7 @@ for refactor verification, read
 
 Local conventions are Node 24+ standard-library ESM (`.mjs`, `node:test`) and
 Python stdlib/unittest. MCP/Pydantic come from the installed Hermes environment.
-The [gateway Dockerfile](../apps/flowforge-gateway/Dockerfile) uses Node Alpine;
+The [gateway Dockerfile](../apps/pentagon-gateway/Dockerfile) uses Node Alpine;
 the [adapter Dockerfile](../apps/flowforge/Dockerfile) adds Python/git on Node Debian.
 This repository does not require a new framework, class hierarchy, TypeScript
 migration, or file-length ceiling for structural work.
@@ -351,7 +351,7 @@ never manufacture the event, approval, or conversation reset on their behalf.
 
 Knowledge snapshots require explicit operator refresh after allowlisted source
 changes, preferably after commit. The allowlist is `HOMELAB_DOCUMENTS` plus direct
-`incidents/*.md` in [homelab-vault.mjs](../apps/flowforge-gateway/src/homelab-vault.mjs);
+`incidents/*.md` in [homelab-vault.mjs](../apps/pentagon-gateway/src/homelab-vault.mjs);
 it does not follow links. **Neither AGENTS.md nor this guide is currently included.**
 Adding them would be a separate retrieval-scope decision. Homelab checks compare
 source/version and a seven-day freshness threshold; search alone reports
@@ -374,7 +374,7 @@ and external checkout dependencies apply only to the rows using them.
 
 | Check / working directory | Existing command | Prerequisites and evidence limits |
 | --- | --- | --- |
-| Gateway/broker/approval/restart/delivery; `apps/flowforge-gateway` | `npm test` | Node 24+, local TCP/Unix fixture sockets and temp files; no npm install needed. Fake Docker/Matrix plus real local HTTP boundaries prove modeled behavior, not production effects. |
+| Gateway/broker/approval/restart/delivery; `apps/pentagon-gateway` | `npm test` | Node 24+, local TCP/Unix fixture sockets and temp files; no npm install needed. Fake Docker/Matrix plus real local HTTP boundaries prove modeled behavior, not production effects. |
 | Focus one gateway area; same directory | `node --test test/restart.test.mjs` (or `gateway.test.mjs`, `matrix-approvals.test.mjs`, `workflow-delivery.test.mjs` under `test/`) | Include related integration tests when a shared state/response contract changes. |
 | FlowForge adapter; repository root | `python3 -m unittest discover -s apps/flowforge -p 'test_*.py'` | Python/Git/temp writable tree. Real-runner test skips if sibling `apps/flow-forge-tui/pipeline_runner.py` is absent; its model process boundary is mocked. Does not exercise real OpenCode permissions or GLM. |
 | MCP bridge; root | `python3 -m unittest discover -s apps/hermes -p 'test_*.py'` | MCP SDK + Pydantic in chosen Python; mocked HTTP. Missing imports are an unavailable environment, not a passing skip. Can use installed image in a disposable no-network container and read-only test mount; schema inspection uses serialization aliases, with tested scope recorded below. |
@@ -385,7 +385,7 @@ and external checkout dependencies apply only to the rows using them.
 | Native planning preflight; `apps/hermes` | `docker compose exec -T flowforge-api python3 - < ../../scripts/verify_flowforge_preflight.py` | Installed runner/OpenCode/source mounts; creates retained private preflight snapshot/state, exercises real allowed/denied reads/writes/shell, no model. Schedule away from active planning; not a pure read-only check or ordinary unit prerequisite. |
 | Live skill behavior; root, separate authorization | `python3 scripts/verify_hermes_skills.py --live` | Existing GLM/gateway credentials, model cost and diagnostic-data egress. Isolated CLI sessions with validation-only read guard; manual answer/evidence review still required. Does not prove end-to-end Matrix behavior. |
 | Compose; `apps/hermes` | `docker compose config --quiet` | Existing complete private `.env`/environment; validates interpolation/shape, not images, reachability, socket access, effective permissions or deployment. Do not print expanded secrets. |
-| Projection/citation tests; `apps/flowforge-gateway` | `node --test test/homelab-vault.test.mjs test/project-vault.test.mjs` | Node/Git/temp state. Real retrieval cases need built external Knowledge Router at `KNOWLEDGE_CLI` or sibling default; skip honestly when absent. Fixture publication alone does not prove retrieval. |
+| Projection/citation tests; `apps/pentagon-gateway` | `node --test test/homelab-vault.test.mjs test/project-vault.test.mjs` | Node/Git/temp state. Real retrieval cases need built external Knowledge Router at `KNOWLEDGE_CLI` or sibling default; skip honestly when absent. Fixture publication alone does not prove retrieval. |
 | Existing homelab snapshot; root | `node scripts/build_homelab_knowledge.mjs --project "$PWD" --output "$PWD/data/knowledge-homelab" --check` | Read-only comparison, existing projection; exits 1 when missing/invalid/stale/source changed. No rebuild. After a commit, changed source revision can require a later authorized refresh even if selected document bytes did not change. |
 
 For monitoring, backup/recovery, or Ansible changes, select their existing
@@ -410,7 +410,7 @@ Hermes conversations/cron work before interrupting processing. Use protected
 read-only inspection; do not manufacture requests to discover active work.
 Let work finish or record an explicit recovery plan before interruption.
 
-Preserve `data/hermes`, `data/flowforge-gateway`, `data/matrix-approvals`,
+Preserve `data/hermes`, `data/pentagon-gateway`, `data/matrix-approvals`,
 `data/flowforge-api`, knowledge projections, source mounts and private `.env`
 credentials/Matrix account. Preserve UID/GID ownership and private modes. Do not
 use `down -v`, delete claims, rotate tokens casually, or restore stale state to
@@ -423,7 +423,7 @@ for only the required service(s). Bind-mounted/config-only changes may require
 
 | Change | Affected services / verification |
 | --- | --- |
-| Gateway contracts/executor | Rebuild/recreate `flowforge-gateway`; wait for health, inspect safe logs and relevant read path. Reload Hermes if MCP contract/selection changes too. |
+| Gateway contracts/executor | Rebuild/recreate `pentagon-gateway`; wait for health, inspect safe logs and relevant read path. Reload Hermes if MCP contract/selection changes too. |
 | Broker/restart logic | Rebuild/recreate `homelab-broker`; include gateway/relay only if their consumed contracts changed. Verify safe inspection; no test restart by default. |
 | Relay approval/delivery | Rebuild/recreate `matrix-approvals`; preserve claims/token/state; inspect sanitized logs and retained progress. No planner rebuild/rerun needed for delivery repair. |
 | Adapter snapshot/runner wrapper | Rebuild/recreate `flowforge-api` after active planning is settled. Native preflight is a separate state-producing check; no paid planning without its own authorization. External mounted runner/steps changes require compatibility review too. |

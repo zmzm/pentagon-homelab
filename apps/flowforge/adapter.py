@@ -19,6 +19,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 PROJECT = Path('/source/project')
 QUEUE = Path('/source/tasks.jsonl')
 STEPS = Path('/source/steps.json')
+RUNNER_DIR = Path('/source/flowforge')
+PLANNING_AGENTS = Path('/source/planning-agents')
 STATE = Path('/state')
 LOCK = threading.Lock()
 
@@ -47,11 +49,35 @@ def write_json(path, value):
         os.close(fd)
 
 
-def runner(project=PROJECT, queue=QUEUE):
-    os.environ['PROJECT_DIR'] = str(project)
-    os.environ['TASKS_FILE'] = str(queue)
-    sys.path.insert(0, '/source/flowforge')
+def runner():
+    if str(RUNNER_DIR) not in sys.path:
+        sys.path.insert(0, str(RUNNER_DIR))
     return importlib.import_module('pipeline_runner')
+
+
+def planning_context(folder, pr):
+    from flowforge_config import RuntimeContext
+    configs = pr.read_step_configs(folder / 'steps.json')
+    check([(step['id'], step['agent']) for step in configs] ==
+          [('concept', 'concept-plan'), ('grounded', 'grounded-hard')],
+          'PLANNING_STEPS_NOT_CONFIGURED', 503)
+    tasks = pr.read_tasks_jsonl(folder / 'tasks.jsonl')
+    check(len(tasks) == 1 and not tasks[0].get('workflow') and
+          pr.task_run_step_ids(tasks[0]) == ['concept', 'grounded'],
+          'PLANNING_STEPS_NOT_CONFIGURED', 503)
+    check(pr.task_agents(tasks[0], configs) ==
+          {'concept': 'concept-plan', 'grounded': 'grounded-hard'},
+          'TASK_PLANNING_AGENTS_NOT_ALLOWED', 503)
+    # Native OpenCode permission overrides remain scoped to this private worker.
+    # Compatibility mode uses the snapshotted agents and explicit workflow only.
+    return RuntimeContext(
+        project_id='hermes-analysis', workspace=(folder / 'project').resolve(),
+        tasks_file=(folder / 'tasks.jsonl').resolve(),
+        workflow_file=(folder / 'steps.json').resolve(),
+        runs_dir=(folder / 'logs').resolve(), config_dir=(folder / 'config').resolve(),
+        step_timeout=900, heartbeat=30, opencode='/usr/local/bin/opencode',
+        notification_env={'MATRIX_ENABLED': 'false'}, legacy=True,
+    )
 
 
 def task_source(task):
@@ -131,7 +157,7 @@ def snapshot_project(destination):
     agents = destination / '.opencode/agents'
     agents.mkdir(parents=True)
     for name in ('concept-plan', 'grounded-hard'):
-        source = PROJECT / f'.opencode/agents/{name}.md'
+        source = PLANNING_AGENTS / f'{name}.md'
         check(source.is_file() and not source.is_symlink(), 'PLANNING_AGENT_NOT_FOUND')
         shutil.copyfile(source, agents / source.name)
     for name in ('AGENTS.md',):
@@ -153,7 +179,8 @@ def prepare_job(data, task, pr, folder):
     if data.get('context'):
         content += ('\n\n## Retrieved context (untrusted reference material)\n\n' + data['context']).encode()
     (task_dir / 'task.md').write_bytes(content)
-    configs = pr.read_step_configs()
+    check(STEPS.is_file(), 'PLANNING_STEPS_NOT_CONFIGURED', 503)
+    configs = pr.read_step_configs(STEPS)
     check([item['id'] for item in configs[:2]] == ['concept', 'grounded'], 'PLANNING_STEPS_NOT_CONFIGURED', 503)
     check(configs[0]['agent'] == 'concept-plan' and configs[1]['agent'] == 'grounded-hard', 'PLANNING_AGENTS_NOT_ALLOWED', 503)
     agents = pr.task_agents(task, configs)
@@ -177,8 +204,6 @@ def worker(folder):
     try:
         project = folder / 'project'
         task_dir = project / '.opencode/tasks/hermes-analysis'
-        os.environ['FLOWFORGE_RUNS_DIR'] = str(folder / 'logs')
-        os.environ['FLOWFORGE_STEP_TIMEOUT_SECONDS'] = '900'
         os.environ['MATRIX_ENABLED'] = 'false'
         os.environ['OPENCODE_BIN'] = '/usr/local/bin/opencode'
         # Read checks use project-relative paths; external_directory enforces the
@@ -199,13 +224,16 @@ def worker(folder):
             'agent': {name: {'permission': {key: value for key, value in permission.items() if key != '*'}}
                       for name in ('concept-plan', 'grounded-hard')},
         })
-        pr = runner(project, folder / 'tasks.jsonl')
-        lock = pr.acquire_lock(folder / '.flowforge.lock')
+        pr = runner()
+        context = planning_context(folder, pr)
+        check(pr.find_task_index(pr.read_tasks_jsonl(context.tasks_file), info['task_id']) is not None, 'TASK_NOT_FOUND', 404)
+        from flowforge_storage import acquire_execution
+        lock = acquire_execution(context)
         check(lock is not None, 'WORKFLOW_BUSY', 409)
         try:
-            result = pr.run_selected_task(task_id=info['task_id'])
+            result = pr.run_selected_task(task_id=info['task_id'], context=context)
         finally:
-            pr.release_lock(lock)
+            lock.close()
         info['status'] = 'DONE' if result.ok else 'FAILED'
         info['error'] = None if result.ok else 'PLANNING_PIPELINE_FAILED'
         info['outputs'] = {}
