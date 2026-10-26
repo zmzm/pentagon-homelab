@@ -1,0 +1,883 @@
+{
+  "spec": 1,
+  "theme": {
+    "id": "homelab-five-screens",
+    "name": "Homelab Five Screens",
+    "author": "Homelab",
+    "version": "1.1.0"
+  },
+  "display": {
+    "width": 240,
+    "height": 240,
+    "background": "#090F18"
+  },
+  "data": [
+    {
+      "id": "weather",
+      "url": "http://192.168.0.185:8096/clock.json",
+      "interval": 10,
+      "fields": [
+        {
+          "id": "main",
+          "path": "main"
+        },
+        {
+          "id": "label",
+          "path": "label"
+        },
+        {
+          "id": "footer",
+          "path": "footer"
+        },
+        {
+          "id": "weather",
+          "path": "weather"
+        },
+        {
+          "id": "sun",
+          "path": "sun"
+        },
+        {
+          "id": "cloud",
+          "path": "cloud"
+        },
+        {
+          "id": "precip",
+          "path": "precip"
+        },
+        {
+          "id": "screen",
+          "path": "screen"
+        }
+      ]
+    },
+    {
+      "id": "feed",
+      "url": "http://192.168.0.185:8096/dashboard.json",
+      "interval": 10,
+      "fields": [
+        {
+          "id": "title",
+          "path": "title"
+        },
+        {
+          "id": "main",
+          "path": "main"
+        },
+        {
+          "id": "label",
+          "path": "label"
+        },
+        {
+          "id": "left",
+          "path": "left"
+        },
+        {
+          "id": "right",
+          "path": "right"
+        },
+        {
+          "id": "footer",
+          "path": "footer"
+        },
+        {
+          "id": "status",
+          "path": "status"
+        },
+        {
+          "id": "level",
+          "path": "level"
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "metric-title",
+      "type": "text",
+      "x": 12,
+      "y": 16,
+      "value": "{feed.title}",
+      "size": 16,
+      "color": "#E8EEF5",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            16
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-badge",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 186,
+      "y": 13,
+      "width": 42,
+      "height": 20,
+      "fill": "#153333",
+      "cornerRadius": 10,
+      "bind": {
+        "fill": {
+          "source": "feed.level",
+          "stops": [
+            {
+              "at": -1,
+              "value": "#3B2C1A"
+            },
+            {
+              "at": 0,
+              "value": "#153333"
+            }
+          ]
+        },
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            13
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-status",
+      "type": "text",
+      "x": 207,
+      "y": 23,
+      "value": "{feed.status}",
+      "size": 8,
+      "color": "#72E4BE",
+      "anchor": "center",
+      "bind": {
+        "color": {
+          "source": "feed.level",
+          "stops": [
+            {
+              "at": -1,
+              "value": "#F2C26A"
+            },
+            {
+              "at": 0,
+              "value": "#72E4BE"
+            }
+          ]
+        },
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            23
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-hero-card",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 12,
+      "y": 46,
+      "width": 216,
+      "height": 102,
+      "fill": "#151F2C",
+      "cornerRadius": 14,
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            46
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-hero-label",
+      "type": "text",
+      "x": 24,
+      "y": 58,
+      "value": "{feed.label}",
+      "size": 8,
+      "color": "#95A8BD",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            58
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-hero-value",
+      "type": "text",
+      "x": 24,
+      "y": 78,
+      "value": "{feed.main}",
+      "size": 48,
+      "color": "#F5F8FC",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            78
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-bar-track",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 24,
+      "y": 133,
+      "width": 192,
+      "height": 4,
+      "fill": "#2A3748",
+      "cornerRadius": 2,
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            133
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-bar-value",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 24,
+      "y": 133,
+      "width": 1,
+      "height": 4,
+      "fill": "#72E4BE",
+      "cornerRadius": 2,
+      "bind": {
+        "width": {
+          "source": "feed.level",
+          "input": [
+            0,
+            100
+          ],
+          "output": [
+            0,
+            192
+          ],
+          "clamp": true
+        },
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            133
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-left-card",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 12,
+      "y": 158,
+      "width": 104,
+      "height": 48,
+      "fill": "#151F2C",
+      "cornerRadius": 12,
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            158
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-right-card",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 124,
+      "y": 158,
+      "width": 104,
+      "height": 48,
+      "fill": "#151F2C",
+      "cornerRadius": 12,
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            158
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-left-value",
+      "type": "text",
+      "x": 64,
+      "y": 182,
+      "value": "{feed.left}",
+      "size": 12,
+      "color": "#CAD8E7",
+      "anchor": "center",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            182
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-right-value",
+      "type": "text",
+      "x": 176,
+      "y": 182,
+      "value": "{feed.right}",
+      "size": 12,
+      "color": "#CAD8E7",
+      "anchor": "center",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            182
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "metric-footer",
+      "type": "text",
+      "x": 120,
+      "y": 224,
+      "value": "{feed.footer}",
+      "size": 8,
+      "color": "#8193AA",
+      "anchor": "center",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            224
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-city",
+      "type": "text",
+      "x": 120,
+      "y": 17,
+      "value": "BIALYSTOK",
+      "size": 12,
+      "color": "#95A8BD",
+      "anchor": "center",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            17,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-clock",
+      "type": "text",
+      "x": 120,
+      "y": 61,
+      "value": "{HH}:{MM}",
+      "size": 48,
+      "color": "#F5F8FC",
+      "anchor": "center",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            61,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-date",
+      "type": "text",
+      "x": 120,
+      "y": 103,
+      "value": "{WD} {DD} {MON}",
+      "size": 24,
+      "color": "#CAD8E7",
+      "anchor": "center",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            103,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-card",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 12,
+      "y": 121,
+      "width": 216,
+      "height": 90,
+      "cornerRadius": 14,
+      "fill": "#151F2C",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            121,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-sun",
+      "type": "shape",
+      "shape": "circle",
+      "x": 52,
+      "y": 158,
+      "radius": 1,
+      "fill": "#E8BF61",
+      "bind": {
+        "radius": {
+          "source": "weather.sun",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            0,
+            16
+          ],
+          "clamp": true
+        },
+        "fill": {
+          "source": "weather.sun",
+          "stops": [
+            {
+              "at": 0,
+              "value": "#E8BF61"
+            },
+            {
+              "at": 2,
+              "value": "#C2D7F5"
+            }
+          ]
+        },
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            158,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-cloud-top",
+      "type": "shape",
+      "shape": "circle",
+      "x": 54,
+      "y": 164,
+      "radius": 1,
+      "fill": "#BDCBDD",
+      "bind": {
+        "radius": {
+          "source": "weather.cloud",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            0,
+            18
+          ],
+          "clamp": true
+        },
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            164,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-cloud-base",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 32,
+      "y": 170,
+      "width": 1,
+      "height": 16,
+      "cornerRadius": 8,
+      "fill": "#BDCBDD",
+      "bind": {
+        "width": {
+          "source": "weather.cloud",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            0,
+            54
+          ],
+          "clamp": true
+        },
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            170,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-precip0",
+      "type": "shape",
+      "shape": "line",
+      "x": 46,
+      "y": 192,
+      "x2": 42,
+      "y2": 199,
+      "stroke": "#70B6ED",
+      "strokeWidth": 3,
+      "bind": {
+        "x": {
+          "source": "weather.precip",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            46
+          ],
+          "clamp": true
+        },
+        "x2": {
+          "source": "weather.precip",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            42
+          ],
+          "clamp": true
+        },
+        "stroke": {
+          "source": "weather.precip",
+          "stops": [
+            {
+              "at": 0,
+              "value": "#70B6ED"
+            },
+            {
+              "at": 2,
+              "value": "#F0F6FC"
+            }
+          ]
+        },
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            192,
+            479
+          ],
+          "clamp": true
+        },
+        "y2": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            199,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-thermo-stem",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 111,
+      "y": 146,
+      "width": 5,
+      "height": 23,
+      "cornerRadius": 2,
+      "stroke": "#72E4BE",
+      "strokeWidth": 1,
+      "bind": {
+        "width": {
+          "source": "weather.weather",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            0,
+            5
+          ],
+          "clamp": true
+        },
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            146,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-thermo-bulb",
+      "type": "shape",
+      "shape": "circle",
+      "x": 113,
+      "y": 172,
+      "radius": 1,
+      "fill": "#72E4BE",
+      "bind": {
+        "radius": {
+          "source": "weather.weather",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            0,
+            5
+          ],
+          "clamp": true
+        },
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            172,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-temperature",
+      "type": "text",
+      "x": 128,
+      "y": 143,
+      "value": "{weather.main}",
+      "size": 32,
+      "color": "#F5F8FC",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            143,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-condition",
+      "type": "text",
+      "x": 124,
+      "y": 186,
+      "value": "{weather.label}",
+      "size": 8,
+      "color": "#95A8BD",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            186,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "weather-footer",
+      "type": "text",
+      "x": 120,
+      "y": 227,
+      "value": "{weather.footer}",
+      "size": 8,
+      "color": "#8193AA",
+      "anchor": "center",
+      "bind": {
+        "y": {
+          "source": "weather.screen",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            227,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    }
+  ]
+}

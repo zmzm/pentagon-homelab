@@ -1,0 +1,23 @@
+--- a/src/config.h
++++ b/src/config.h
+@@ -16 +16 @@
+-#define FW_VERSION  "3.1.0"
++#define FW_VERSION  "3.1.0-homelab.1"
+@@ -44,0 +45,3 @@
++#elif defined(SMALLTV_DASHBOARD)
++  #define UPDATE_ASSET "smalltv-mod-firmware-dashboard.bin"
++  #define FW_VARIANT   "esp8266-dashboard"
+--- a/platformio.ini
++++ b/platformio.ini
+@@ -388,0 +389,11 @@
++
++[env:smalltv_dashboard]
++extends = env:smalltv
++build_flags =
++	${env:smalltv.build_flags}
++	-D WITH_HA=0
++	-D WITH_USAGE=0
++	-D WITH_RADAR=0
++	-D WITH_TICKER=0
++	-D WITH_THEME=1
++	-D SMALLTV_DASHBOARD

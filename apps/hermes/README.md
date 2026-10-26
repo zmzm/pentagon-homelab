@@ -161,6 +161,13 @@ Keep the confirmation guard enabled. The operator must not send these events
 on the user's behalf. Refresh the homelab knowledge snapshot after publishing
 changes to its allowlisted documentation, using the refresh procedure below.
 
+Matrix reply instructions in `SOUL.md` favor short paragraphs, simple bullets,
+selective bold labels and readable citations. They discourage wide tables, raw
+JSON and repeated status messages while retaining material caveats and exact
+approval details. This is model guidance; it does not force formatting or alter
+the native Matrix adapter. Auto-threading and mention settings remain as defined
+in Compose. The compact presentation change is locally tested, not live accepted.
+
 ### Skills validation and rollout
 
 Run the offline installed-image checks from the repository root:
@@ -280,8 +287,13 @@ A CONFIRM operation returns `APPROVAL_REQUIRED` with an ID and ten-minute expiry
 not execute. The trusted listener posts the gateway's exact tool and arguments as a notice
 in the Hermes room, and adds two native reaction controls beneath it:
 
-- Tap **✅** to approve the exact proposed action.
-- Tap **❌** to reject it.
+- Tap **✅ Approve** to approve the exact proposed action.
+- Tap **❌ Reject** to reject it.
+
+These are text reaction chips, not Telegram inline keyboards. Their appearance
+depends on the Matrix client. Existing pending prompts retain their plain
+Approve/Reject or ✅/❌ controls; follow the labels shown on the exact trusted
+prompt. Each prompt accepts only the exact labels for its stored control style.
 
 There is no need to copy an ID. The first valid decision takes effect immediately;
 removing a reaction does not undo an already accepted action. Bot-seeded controls never
@@ -308,6 +320,62 @@ durably before the effect; a crash or ambiguous outcome is reported for review, 
 blindly replayed. Results return through the listener. For planning runs, the listener
 polls that specific run and delivers completed plans as described below. It does not run
 another planner or schedule business workflows. Existing cron jobs are untouched.
+
+New approvals read as requests: a question about the action, a description of its
+effect, the user's original request, and the exact tool and all arguments as
+visible labeled details. Known restart, task-planning and dummy actions use fixed
+descriptions; other tools explicitly say their effects are not summarized. No model
+call generates an approval summary. Nested objects and lists retain every key,
+value and scalar type. Strings are quoted; booleans, null and empty containers are
+identified explicitly. No action argument is collapsed or truncated.
+
+Expiry is shown in Warsaw time. The exact UTC expiry, full approval ID and fallback
+commands are retained in an expandable footer, with all content included in the
+plain-text fallback. ✅ Approve/❌ Reject reaction chips remain the main controls.
+The relay sends `org.matrix.custom.html` alongside a complete plain-text `body`.
+All dynamic values are escaped; proposal text and plan excerpts are never interpreted
+as HTML. In addition to the source-size guard, new request payloads exceeding
+60,000 UTF-8 bytes require operator review instead of an incomplete prompt.
+Result notices lead with status;
+restart notices distinguish Docker acknowledgment, observed container state and
+the absence of application/reachability verification. Planning completion notices
+retain task/run IDs, outcome and available filenames without a success mark for
+attachment delivery. File delivery remains a separate tracked operation.
+
+For example, a verified restart result begins:
+
+> **Restart acknowledged by Docker**
+>
+> Service: vaultwarden
+>
+> Container is running and Docker reports healthy.
+>
+> Docker state only; application recovery and external reachability were not checked.
+
+Compatibility: only new relay prompt records receive `presentation: compact-v1`.
+New records also receive `controlStyle: text-emoji-v1` before any prompt or control
+send. Existing `text-v1` records retain plain Approve/Reject controls.
+New prompts use `promptLayout: request-v1`; records without it retain their
+original JSON-style presentation, including unconfirmed sends across an upgrade.
+Records without `controlStyle`, including earlier compact prompts, retain emoji
+controls and their original reaction payloads/transaction IDs. Unknown styles
+cannot authorize a reaction; explicit text commands remain available.
+Their additive `messages` map freezes each complete Matrix notice payload before
+dispatch, including HTML, so ambiguous sends retry the same transaction/content
+after restart. New compact workflow snapshots also retain `notice.formatted_body`.
+Existing prompt records without the presentation marker retain legacy plain-text
+messages and stored workflow bodies. The consumers affected are the relay/state
+reader and Matrix clients; MCP, gateway, broker and adapter contracts are unchanged.
+An older relay can read these additive records but does not honor frozen compact
+payloads or text control styles: let pending approvals/notices/deliveries finish
+before rolling back to that version. Otherwise text chips may stop responding and
+unacknowledged control sends may change payload under an existing transaction ID.
+Never remove execution claims or media progress to make a rollback retry work.
+
+Rollout requires only the `matrix-approvals` image and a Hermes reload for `SOUL.md`,
+after checking active work as described in the engineering rollout guide. No live
+Matrix send, session reset, service restart or paid call is part of local validation.
+The request-layout change touches only the relay and needs no Hermes recreation.
 
 ### Planning result delivery
 

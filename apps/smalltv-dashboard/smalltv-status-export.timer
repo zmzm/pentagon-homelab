@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the SmallTV monitoring projection
+
+[Timer]
+OnActiveSec=5s
+OnUnitActiveSec=30s
+AccuracySec=2s
+Unit=smalltv-status-export.service
+
+[Install]
+WantedBy=timers.target

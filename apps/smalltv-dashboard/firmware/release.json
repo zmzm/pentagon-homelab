@@ -1,0 +1,14 @@
+{
+  "release": "v3.1.0",
+  "url": "https://github.com/giovi321/smalltv-mod/releases/tag/v3.1.0",
+  "assets": [
+    {
+      "name": "smalltv-mod-firmware.bin",
+      "digest": "sha256:a89bfe0adec61f1e77981ffd4b549cbbd0924686cbcaef00fc60e77be1cbacc5"
+    },
+    {
+      "name": "smalltv-mod-loader.bin",
+      "digest": "sha256:cf854fd542a2cfb5b6259b353d85355a14fe302608093bb16f82388b1845a923"
+    }
+  ]
+}

@@ -151,3 +151,26 @@ Existing ignored local env files:
 - Local service domains are routed through Caddy; public Matrix access uses Cloudflare Tunnel.
 
 The eleven core Compose projects have Ansible deployment playbooks, including service-specific recovery prerequisites and post-deployment checks. The personal-agent stack uses the separate deployment procedure in the Hermes guide. Monitoring and database backup timers are managed by `ansible/scheduled-jobs.yml`. See [Ansible deployment and recovery](ansible/README.md).
+
+---
+
+# SmallTV JSON Dashboard
+
+`apps/smalltv-dashboard/compose.yaml` deploys the JSON feed on LAN port 8096.
+It provides weather, host and Pi-hole cards to the SmallTV-Ultra at `192.168.0.106`;
+its active feeds are `/clock.json` and `/dashboard.json` at `http://192.168.0.185:8096`. See the
+[app guide](apps/smalltv-dashboard/README.md) and
+[deployment record](apps/smalltv-dashboard/DEPLOYMENT.md).
+
+The SmallTV now uses a custom `esp8266-dashboard` firmware and the
+`homelab-five-screens` theme. It rotates Bialystok clock/weather (40 seconds),
+then the original host/Pi-hole pages and the new services/backups pages
+(20 seconds each). A host timer publishes an allowlisted monitoring summary
+for the dashboard; existing checks and Matrix alerts are unchanged. Weather is refreshed from Open-Meteo every ten
+minutes; see [app deployment](apps/smalltv-dashboard/DEPLOYMENT.md).
+
+SmallTV native night mode blanks the screen from 23:00 to 07:00 Europe/Warsaw.
+The dashboard also sends bounded red/yellow problem and green recovery overlays,
+with persistent deduplication, six-hour reminders and matching quiet hours.
+Notification readiness is exposed at `/notifications.json`; details and rebuild
+steps are in [the app guide](apps/smalltv-dashboard/README.md).

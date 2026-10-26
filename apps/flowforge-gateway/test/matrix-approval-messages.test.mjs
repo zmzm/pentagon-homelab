@@ -1,6 +1,59 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { workflowDelivery, workflowFallback, restartResultText } from '../src/matrix-approval-messages.mjs';
+import { workflowDelivery, workflowFallback, restartResultText, compactApprovalResult, approvalRequest } from '../src/matrix-approval-messages.mjs';
+
+const proposal = (tool, args) => ({id: '12345678-1234-1234-1234-123456789abc', tool, arguments: args,
+  context: {userRequest: 'Please run this action.'}, expiresAt: Date.parse('2026-10-25T14:38:05.289Z')});
+
+test('request messages lead with the action and effect while all scope details stay expanded', () => {
+  const request = proposal('homelab.restartService', {service: 'vaultwarden'});
+  const message = approvalRequest(request, 'text-emoji-v1');
+  assert.ok(message.body.startsWith('🔐 Restart vaultwarden?\n\nMay I restart this service?'));
+  assert.ok(message.body.includes('briefly stop while it restarts'));
+  assert.ok(message.body.includes('application access is not checked'));
+  assert.ok(message.body.includes('25 Oct 2026, 15:38 (Warsaw time)'));
+  assert.ok(message.body.includes('2026-10-25T14:38:05.289Z'));
+  assert.ok(message.body.includes(`Reference: ${request.id}`));
+  assert.ok(message.body.includes(`!approve ${request.id}\n!reject ${request.id}`));
+  const visible = message.formatted_body.split('<details>')[0];
+  for (const text of [request.tool, 'service', 'vaultwarden', request.context.userRequest, '✅ Approve', '❌ Reject']) {
+    assert.ok(visible.includes(text));
+  }
+  assert.ok(!message.body.includes('"arguments":'));
+});
+
+test('planning approval explains the run and model use while retaining every nested argument', () => {
+  const request = proposal('flowforge.run', {workflow: 'task-analysis', input: {
+    project: 'mentory', task_id: 'TASK-12', task_sha256: 'a'.repeat(64), context: 'Context\nwith another line',
+  }});
+  const message = approvalRequest(request, 'text-emoji-v1');
+  assert.ok(message.body.startsWith('🔐 Create plans for TASK-12?'));
+  for (const text of ['configured model', 'usage costs', 'source repository stays read-only',
+    'workflow', 'task-analysis', 'input', 'project', 'mentory', 'task_id', 'TASK-12', 'task_sha256', 'a'.repeat(64),
+    'context', 'Context\nwith another line']) assert.ok(message.body.includes(text));
+});
+
+test('generic request fields preserve empty values, container and scalar types without claiming safe effects', () => {
+  const args = JSON.parse('{"list":[false,0,"0",null,"",[],{}],"nested":{"__proto__":"literal key","effect":"<script>never HTML</script>"}}');
+  const message = approvalRequest(proposal('unknown.action', args), 'text-emoji-v1');
+  for (const text of ['effects are not summarized', 'list', 'List:', 'No (false)', '0', '“0”', 'None (null)',
+    '“”', 'Empty list ([])', 'Empty object ({})', 'nested', '__proto__', 'literal key', '<script>never HTML</script>']) {
+    assert.ok(message.body.includes(text));
+  }
+  assert.ok(!message.formatted_body.includes('<script>'));
+  assert.ok(message.formatted_body.includes('&lt;script&gt;never HTML&lt;/script&gt;'));
+  assert.ok(!message.body.includes('No services will restart'));
+});
+
+test('dummy request reads as a confirmation request and preserves test-only details', () => {
+  const message = approvalRequest(proposal('ui-test.noop', {test_only: true, effect: 'Post a demo confirmation only.'}), 'text-emoji-v1');
+  assert.ok(message.body.startsWith('🔐 Try the approval controls?'));
+  assert.ok(message.body.includes('May I post a confirmation message'));
+  assert.ok(message.body.includes('no paid calls will be made'));
+  assert.ok(message.body.includes('test_only'));
+  assert.ok(message.body.includes('Yes (true)'));
+  assert.ok(message.body.includes('Post a demo confirmation only.'));
+});
 
 test('workflow snapshot preserves its initial persisted fields and plan order', () => {
   const run = {status: 'DONE', task_id: 'TASK-12', run_id: 'run', outputs: {
@@ -89,4 +142,35 @@ test('unknown or missing restart verification retains the unavailable message', 
     assert.equal(restartResultText('approval-id', {arguments: {service: 'app'}, outcome: {data: {verification}}}),
       'Approval approval-id: Docker acknowledged the app restart. Container verification is unavailable. Docker state only; application recovery and external reachability were not checked.');
   }
+});
+
+test('compact restart results preserve verification limits and never mark unhealthy or uncertain restarts successful', () => {
+  for (const status of ['healthy', 'running_no_healthcheck', 'unhealthy', 'stopped', 'starting_timeout', 'unavailable', 'unknown']) {
+    const record = {tool: 'homelab.restartService', status: 'DONE', arguments: {service: 'app'},
+      outcome: {data: {restart: {status: 'acknowledged'}, verification: {status}}}};
+    const message = compactApprovalResult('id', record);
+    assert.ok(message.body.startsWith('Restart acknowledged by Docker'));
+    assert.ok(message.body.includes('application recovery and external reachability were not checked'));
+    assert.ok(!message.body.includes('✅'));
+    if (status === 'unhealthy') assert.ok(message.body.includes('running but unhealthy'));
+    if (status === 'unknown') assert.ok(message.body.includes('verification is unavailable'));
+    record.status = 'UNCERTAIN';
+    const uncertain = compactApprovalResult('id', record);
+    assert.ok(uncertain.body.startsWith('⚠️ Restart outcome uncertain'));
+    assert.ok(uncertain.body.includes('do not retry automatically'));
+    assert.ok(!uncertain.body.includes('Docker reports healthy'));
+  }
+});
+
+test('compact planning notices retain identifiers, outcome and filenames without interpreting them as HTML', () => {
+  const done = workflowDelivery({status: 'DONE', task_id: '<task>', run_id: 'run&1',
+    outputs: {'concept-plan.md': 'Concept', 'grounded-plan.md': 'Grounded'}}, true);
+  assert.ok(done.notice.body.includes('Task: <task>\nRun: run&1\nOutcome: DONE'));
+  assert.ok(done.notice.body.includes('concept-plan.md, grounded-plan.md'));
+  assert.ok(done.notice.formatted_body.includes('&lt;task&gt;'));
+  assert.ok(done.notice.formatted_body.includes('run&amp;1'));
+  assert.ok(!done.notice.body.includes('✅'));
+  const failed = workflowDelivery({status: 'FAILED', error: '<script>secret</script>'}, true);
+  assert.ok(failed.notice.body.includes('PLANNING_PIPELINE_FAILED'));
+  assert.ok(!failed.notice.formatted_body.includes('secret'));
 });

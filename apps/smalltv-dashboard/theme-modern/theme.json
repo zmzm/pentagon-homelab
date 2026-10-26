@@ -1,0 +1,234 @@
+{
+  "spec": 1,
+  "theme": {
+    "id": "pentagon-modern",
+    "name": "Pentagon Modern",
+    "author": "Homelab",
+    "version": "2.0.0"
+  },
+  "display": {
+    "width": 240,
+    "height": 240,
+    "background": "#090F18"
+  },
+  "data": [
+    {
+      "id": "feed",
+      "url": "http://192.168.0.185:8096/screen-v2.json",
+      "interval": 10,
+      "fields": [
+        {
+          "id": "title",
+          "path": "title"
+        },
+        {
+          "id": "main",
+          "path": "main"
+        },
+        {
+          "id": "label",
+          "path": "label"
+        },
+        {
+          "id": "left",
+          "path": "left"
+        },
+        {
+          "id": "right",
+          "path": "right"
+        },
+        {
+          "id": "footer",
+          "path": "footer"
+        },
+        {
+          "id": "status",
+          "path": "status"
+        },
+        {
+          "id": "level",
+          "path": "level"
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "title",
+      "type": "text",
+      "x": 12,
+      "y": 16,
+      "value": "{feed.title}",
+      "size": 16,
+      "color": "#E8EEF5"
+    },
+    {
+      "id": "badge",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 186,
+      "y": 13,
+      "width": 42,
+      "height": 20,
+      "fill": "#153333",
+      "cornerRadius": 10,
+      "bind": {
+        "fill": {
+          "source": "feed.level",
+          "stops": [
+            {
+              "at": -1,
+              "value": "#3B2C1A"
+            },
+            {
+              "at": 0,
+              "value": "#153333"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "status",
+      "type": "text",
+      "x": 207,
+      "y": 23,
+      "value": "{feed.status}",
+      "size": 8,
+      "color": "#72E4BE",
+      "anchor": "center",
+      "bind": {
+        "color": {
+          "source": "feed.level",
+          "stops": [
+            {
+              "at": -1,
+              "value": "#F2C26A"
+            },
+            {
+              "at": 0,
+              "value": "#72E4BE"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "hero-card",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 12,
+      "y": 46,
+      "width": 216,
+      "height": 102,
+      "fill": "#151F2C",
+      "cornerRadius": 14
+    },
+    {
+      "id": "hero-label",
+      "type": "text",
+      "x": 24,
+      "y": 58,
+      "value": "{feed.label}",
+      "size": 8,
+      "color": "#95A8BD"
+    },
+    {
+      "id": "hero-value",
+      "type": "text",
+      "x": 24,
+      "y": 78,
+      "value": "{feed.main}",
+      "size": 48,
+      "color": "#F5F8FC"
+    },
+    {
+      "id": "bar-track",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 24,
+      "y": 133,
+      "width": 192,
+      "height": 4,
+      "fill": "#2A3748",
+      "cornerRadius": 2
+    },
+    {
+      "id": "bar-value",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 24,
+      "y": 133,
+      "width": 1,
+      "height": 4,
+      "fill": "#72E4BE",
+      "cornerRadius": 2,
+      "bind": {
+        "width": {
+          "source": "feed.level",
+          "input": [
+            0,
+            100
+          ],
+          "output": [
+            0,
+            192
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "left-card",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 12,
+      "y": 158,
+      "width": 104,
+      "height": 48,
+      "fill": "#151F2C",
+      "cornerRadius": 12
+    },
+    {
+      "id": "right-card",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 124,
+      "y": 158,
+      "width": 104,
+      "height": 48,
+      "fill": "#151F2C",
+      "cornerRadius": 12
+    },
+    {
+      "id": "left-value",
+      "type": "text",
+      "x": 64,
+      "y": 182,
+      "value": "{feed.left}",
+      "size": 12,
+      "color": "#CAD8E7",
+      "anchor": "center"
+    },
+    {
+      "id": "right-value",
+      "type": "text",
+      "x": 176,
+      "y": 182,
+      "value": "{feed.right}",
+      "size": 12,
+      "color": "#CAD8E7",
+      "anchor": "center"
+    },
+    {
+      "id": "footer",
+      "type": "text",
+      "x": 120,
+      "y": 224,
+      "value": "{feed.footer}",
+      "size": 8,
+      "color": "#8193AA",
+      "anchor": "center"
+    }
+  ]
+}

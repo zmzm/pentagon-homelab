@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, openSync, fsyncSync
 import { pathToFileURL } from 'node:url';
 import { check } from './common.mjs';
 import { jsonClient } from './approval-relay-http.mjs';
-import { planNames, workflowDelivery, workflowFallback, restartResultText } from './matrix-approval-messages.mjs';
+import { planNames, workflowDelivery, workflowFallback, restartResultText, approvalControls, approvalPrompt, approvalRequest, compactApprovalResult, compactMessage } from './matrix-approval-messages.mjs';
 
 export { jsonClient } from './approval-relay-http.mjs';
 
@@ -14,10 +14,12 @@ export function decisionFor(event, room, expectedRoom, users, prompts, now) {
   let id, approve;
   if (event.type === 'm.reaction') {
     const relation = content['m.relates_to'];
-    if (relation?.rel_type !== 'm.annotation' || !['✅', '❌'].includes(relation.key)) return null;
+    if (relation?.rel_type !== 'm.annotation') return null;
     const matches = Object.entries(prompts).filter(([, prompt]) => prompt.eventId && prompt.eventId === relation.event_id);
     if (matches.length !== 1) return null;
-    id = matches[0][0]; approve = relation.key === '✅';
+    const choice = approvalControls(matches[0][1].controlStyle).find(([, key]) => key === relation.key);
+    if (!choice) return null;
+    id = matches[0][0]; approve = choice[0] === 'approve';
   } else if (event.type === 'm.room.message') {
     if (content.msgtype !== 'm.text' || content['m.relates_to']?.rel_type === 'm.replace') return null;
     const match = content.body?.trim().match(/^!(approve|reject) ([0-9a-f-]{36})$/);
@@ -60,11 +62,23 @@ export class ApprovalRelay {
     check(!state.some(event => event.type === 'm.room.encryption'), 'ENCRYPTED_APPROVAL_ROOM');
   }
   async notify(id, suffix, text) {
-    return this.sendEvent(id, suffix, 'm.room.message', {msgtype: 'm.notice', body: text});
+    const prompt = this.state.prompts[id];
+    let content = {msgtype: 'm.notice', body: typeof text === 'string' ? text : text.body};
+    if (typeof text !== 'string' && text.formatted_body !== undefined) {
+      content.format = 'org.matrix.custom.html'; content.formatted_body = text.formatted_body;
+    }
+    if (prompt?.presentation === 'compact-v1') {
+      // Freeze complete event content before dispatch; retries survive restarts
+      // without changing bodies or formatting under the same transaction ID.
+      prompt.messages ||= {};
+      prompt.messages[suffix] ||= content; this.save(this.state);
+      content = prompt.messages[suffix];
+    }
+    return this.sendEvent(id, suffix, 'm.room.message', content);
   }
   async controls(id, prompt) {
     prompt.controls ||= {};
-    for (const [action, key] of [['approve', '✅'], ['reject', '❌']]) {
+    for (const [action, key] of approvalControls(prompt.controlStyle)) {
       if (prompt.controls[action]) continue;
       const response = await this.sendEvent(id, `control-${action}`, 'm.reaction', {'m.relates_to': {rel_type: 'm.annotation', event_id: prompt.eventId, key}});
       check(response.event_id, 'MISSING_CONTROL_EVENT');
@@ -100,6 +114,10 @@ export class ApprovalRelay {
     if (record.tool === 'flowforge.run' && record.outcome?.data?.run_id) {
       text = `Approved ${id}. FlowForge planning run ${record.outcome.data.run_id} started. Only concept and grounded planning steps run; the source repository stays read-only. I will post the completed plans here.`;
     }
+    if (prompt.presentation === 'compact-v1') {
+      text = compactApprovalResult(id, record) || compactMessage(
+        record.expiresAt <= this.now() ? 'Approval expired' : '⚠️ Execution outcome uncertain', [text]);
+    }
     await this.notify(id, 'result', text);
     if (record.tool === 'flowforge.run' && record.outcome?.data?.run_id) prompt.workflowPending = true;
     prompt.finished = true; this.save(this.state);
@@ -109,7 +127,7 @@ export class ApprovalRelay {
       const {data: run} = await this.gateway('GET', `/approvals/${id}/workflow`);
       if (run.status === 'RUNNING') return;
       check(['DONE', 'FAILED'].includes(run.status), 'INVALID_WORKFLOW_STATUS');
-      prompt.workflowDelivery = workflowDelivery(run);
+      prompt.workflowDelivery = workflowDelivery(run, prompt.presentation === 'compact-v1');
       // Freeze the sanitized bytes and message bodies before the first send so
       // retries keep both the same transaction IDs and the same content.
       this.save(this.state);
@@ -152,7 +170,7 @@ export class ApprovalRelay {
   async workflowNotice(id, suffix, message) {
     if (message.eventId) return;
     try {
-      const response = await this.notify(id, suffix, message.body);
+      const response = await this.notify(id, suffix, message);
       check(response.event_id, 'MISSING_WORKFLOW_EVENT');
       message.eventId = response.event_id; delete message.error;
     } catch {
@@ -195,16 +213,22 @@ export class ApprovalRelay {
       await this.processOperation(request.id, 'prompt', async () => {
         let prompt = this.state.prompts[request.id];
         if (!prompt) {
-          prompt = this.state.prompts[request.id] = {preparedAt: this.now(), expiresAt: request.expiresAt}; this.save(this.state);
+          prompt = this.state.prompts[request.id] = {preparedAt: this.now(), expiresAt: request.expiresAt,
+            presentation: 'compact-v1', controlStyle: 'text-emoji-v1', promptLayout: 'request-v1'}; this.save(this.state);
         }
         if (!prompt.eventId && !prompt.finished) {
           const description = JSON.stringify({tool: request.tool, arguments: request.arguments, userRequest: request.context.userRequest}, null, 2);
+          const message = description.length > 10000 ? null :
+            prompt.promptLayout === 'request-v1' ? approvalRequest(request, prompt.controlStyle) :
+            prompt.presentation === 'compact-v1' ? approvalPrompt(request, description, prompt.controlStyle) :
+            `Approval required (expires ${new Date(request.expiresAt).toISOString()})\n${description}\nTap ✅ to approve this exact action, or ❌ to reject. Your tap takes effect immediately; removing a reaction does not undo it.\nText fallback:\n!approve ${request.id}\n!reject ${request.id}`;
           // Never truncate a proposed action: approval must present every argument.
-          if (description.length > 10000) {
+          // Leave room for Matrix event metadata below its 64 KiB event limit.
+          if (!message || (prompt.promptLayout === 'request-v1' && Buffer.byteLength(JSON.stringify(message)) > 60000)) {
             await this.notify(request.id, 'oversize', `Approval ${request.id} is too large to review safely in Matrix. No action will execute; use the operator API to review or reject it.`);
             prompt.finished = true; this.save(this.state); return;
           }
-          const response = await this.notify(request.id, 'prompt', `Approval required (expires ${new Date(request.expiresAt).toISOString()})\n${description}\nTap ✅ to approve this exact action, or ❌ to reject. Your tap takes effect immediately; removing a reaction does not undo it.\nText fallback:\n!approve ${request.id}\n!reject ${request.id}`);
+          const response = await this.notify(request.id, 'prompt', message);
           prompt.eventId = response.event_id; check(prompt.eventId, 'MISSING_PROMPT_EVENT'); this.save(this.state);
         }
         if (prompt.eventId && !prompt.finished && !prompt.decision) await this.controls(request.id, prompt);

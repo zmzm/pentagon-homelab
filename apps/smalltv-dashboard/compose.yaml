@@ -1,0 +1,37 @@
+services:
+  smalltv-dashboard:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${SMALLTV_BIND_IP:-192.168.0.185}:8096:8096"
+    environment:
+      PROC_ROOT: /host/proc
+      THERMAL_ROOT: /sys/class/thermal
+      DISK_PATH: /disk-probe
+      PIHOLE_URL: http://pihole-adapter:8000/pihole-summary
+      MONITOR_STATUS_FILE: /status/status.json
+      SMALLTV_DEVICE_URL: http://192.168.0.106
+      ALERT_STATE_FILE: /state/alerts.json
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys/class/thermal:/sys/class/thermal:ro
+      - /sys/devices:/sys/devices:ro
+      - ./disk-probe:/disk-probe:ro
+      - /var/lib/smalltv-dashboard:/status:ro
+      - /home/pentagon-admin/Documents/homelab/data/smalltv-dashboard:/state:rw
+    networks:
+      - proxy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 64m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8096/health', timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+networks:
+  proxy:
+    external: true

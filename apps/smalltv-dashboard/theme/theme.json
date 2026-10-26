@@ -1,0 +1,149 @@
+{
+  "spec": 1,
+  "theme": {
+    "id": "pentagon-homelab",
+    "name": "Pentagon Homelab",
+    "author": "Homelab",
+    "version": "1.0.0"
+  },
+  "display": {
+    "width": 240,
+    "height": 240,
+    "background": "#0D1521"
+  },
+  "data": [
+    {
+      "id": "feed",
+      "url": "http://192.168.0.185:8096/screen.json",
+      "interval": 10,
+      "fields": [
+        {
+          "id": "title",
+          "path": "title"
+        },
+        {
+          "id": "line1",
+          "path": "line1"
+        },
+        {
+          "id": "line2",
+          "path": "line2"
+        },
+        {
+          "id": "line3",
+          "path": "line3"
+        },
+        {
+          "id": "line4",
+          "path": "line4"
+        },
+        {
+          "id": "status",
+          "path": "status"
+        },
+        {
+          "id": "updated",
+          "path": "updated"
+        },
+        {
+          "id": "severity",
+          "path": "severity"
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "heading",
+      "type": "text",
+      "x": 12,
+      "y": 12,
+      "value": "{feed.title}",
+      "size": 16,
+      "color": "#5DD9F5"
+    },
+    {
+      "id": "rule",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 12,
+      "y": 38,
+      "width": 216,
+      "height": 3,
+      "fill": "#5DD9F5"
+    },
+    {
+      "id": "row1",
+      "type": "text",
+      "x": 12,
+      "y": 48,
+      "value": "{feed.line1}",
+      "size": 16,
+      "color": "#FFFFFF"
+    },
+    {
+      "id": "row2",
+      "type": "text",
+      "x": 12,
+      "y": 78,
+      "value": "{feed.line2}",
+      "size": 16,
+      "color": "#FFFFFF"
+    },
+    {
+      "id": "row3",
+      "type": "text",
+      "x": 12,
+      "y": 108,
+      "value": "{feed.line3}",
+      "size": 16,
+      "color": "#FFFFFF"
+    },
+    {
+      "id": "row4",
+      "type": "text",
+      "x": 12,
+      "y": 138,
+      "value": "{feed.line4}",
+      "size": 16,
+      "color": "#FFFFFF"
+    },
+    {
+      "id": "status",
+      "type": "text",
+      "x": 12,
+      "y": 180,
+      "value": "{feed.status}",
+      "size": 16,
+      "color": "#999999",
+      "bind": {
+        "color": {
+          "source": "feed.severity",
+          "stops": [
+            {
+              "at": 0,
+              "value": "#43CC88"
+            },
+            {
+              "at": 1,
+              "value": "#F5B642"
+            },
+            {
+              "at": 2,
+              "value": "#EE5555"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "updated",
+      "type": "text",
+      "x": 12,
+      "y": 207,
+      "value": "{feed.updated}",
+      "size": 8,
+      "color": "#A0ACBB"
+    }
+  ]
+}

@@ -181,3 +181,29 @@ Potential additions to the infrastructure:
 - Centralized logging
 - Off-device backup replication
 - Git remote and deployment workflow
+
+---
+
+# SmallTV Desk Display
+
+SmallTV-Ultra at `192.168.0.106` runs custom smalltv-mod 3.1.0-homelab.1 and polls the
+`smalltv-dashboard` JSON service at `192.168.0.185:8096` every ten seconds.
+The Compose service in `apps/smalltv-dashboard` uses the shared `proxy` network
+for the existing Pi-hole adapter and read-only host metrics. Weather, host
+metrics and Pi-hole use their original layouts alongside a separate clock/weather screen. Rendering
+happens on the device from JSON; no dashboard screenshots are generated.
+See [deployment and verification](apps/smalltv-dashboard/DEPLOYMENT.md).
+
+The SmallTV now uses a custom `esp8266-dashboard` firmware and the
+`homelab-five-screens` theme. Its `/clock.json` and `/dashboard.json` feeds
+rotate Bialystok clock/weather (40 seconds), then host, Pi-hole, services and
+backups (20 seconds each). The original layouts and 24-pixel weather date
+are retained. A separate thirty-second exporter publishes an allowlisted
+summary from the existing private five-minute monitoring state. Weather is refreshed from Open-Meteo every ten
+minutes; see [app deployment](apps/smalltv-dashboard/DEPLOYMENT.md).
+
+SmallTV native night mode blanks the screen from 23:00 to 07:00 Europe/Warsaw.
+The dashboard also sends bounded red/yellow problem and green recovery overlays,
+with persistent deduplication, six-hour reminders and matching quiet hours.
+Notification readiness is exposed at `/notifications.json`; details and rebuild
+steps are in [the app guide](apps/smalltv-dashboard/README.md).

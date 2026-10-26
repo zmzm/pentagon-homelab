@@ -1,0 +1,333 @@
+{
+  "spec": 1,
+  "theme": {
+    "id": "bialystok-clock-v2",
+    "name": "Bialystok Clock",
+    "author": "Homelab",
+    "version": "1.1.0"
+  },
+  "display": {
+    "width": 240,
+    "height": 240,
+    "background": "#090F18"
+  },
+  "data": [
+    {
+      "id": "feed",
+      "url": "http://192.168.0.185:8096/home.json",
+      "interval": 10,
+      "fields": [
+        {
+          "id": "city",
+          "path": "city"
+        },
+        {
+          "id": "main",
+          "path": "main"
+        },
+        {
+          "id": "label",
+          "path": "label"
+        },
+        {
+          "id": "footer",
+          "path": "footer"
+        },
+        {
+          "id": "weather",
+          "path": "weather"
+        },
+        {
+          "id": "sun",
+          "path": "sun"
+        },
+        {
+          "id": "cloud",
+          "path": "cloud"
+        },
+        {
+          "id": "precip",
+          "path": "precip"
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "city",
+      "type": "text",
+      "x": 120,
+      "y": 17,
+      "value": "{feed.city}",
+      "size": 12,
+      "color": "#95A8BD",
+      "anchor": "center"
+    },
+    {
+      "id": "clock",
+      "type": "text",
+      "x": 120,
+      "y": 67,
+      "value": "{HH}:{MM}",
+      "size": 48,
+      "color": "#F5F8FC",
+      "anchor": "center"
+    },
+    {
+      "id": "date",
+      "type": "text",
+      "x": 120,
+      "y": 103,
+      "value": "{WD}  {DD} {MON}",
+      "size": 8,
+      "color": "#95A8BD",
+      "anchor": "center"
+    },
+    {
+      "id": "card",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 12,
+      "y": 121,
+      "width": 216,
+      "height": 90,
+      "cornerRadius": 14,
+      "fill": "#151F2C"
+    },
+    {
+      "id": "system-icon",
+      "type": "text",
+      "x": 56,
+      "y": 164,
+      "value": "SYS",
+      "size": 12,
+      "color": "#72E4BE",
+      "anchor": "center",
+      "bind": {
+        "x": {
+          "source": "feed.weather",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            56,
+            479
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "sun",
+      "type": "shape",
+      "shape": "circle",
+      "x": 52,
+      "y": 158,
+      "radius": 1,
+      "fill": "#E8BF61",
+      "bind": {
+        "radius": {
+          "source": "feed.sun",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            0,
+            16
+          ],
+          "clamp": true
+        },
+        "fill": {
+          "source": "feed.sun",
+          "stops": [
+            {
+              "at": 0,
+              "value": "#E8BF61"
+            },
+            {
+              "at": 2,
+              "value": "#C2D7F5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cloud-top",
+      "type": "shape",
+      "shape": "circle",
+      "x": 54,
+      "y": 164,
+      "radius": 1,
+      "fill": "#BDCBDD",
+      "bind": {
+        "radius": {
+          "source": "feed.cloud",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            0,
+            18
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "cloud-base",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 32,
+      "y": 170,
+      "width": 1,
+      "height": 16,
+      "cornerRadius": 8,
+      "fill": "#BDCBDD",
+      "bind": {
+        "width": {
+          "source": "feed.cloud",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            0,
+            54
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "precip0",
+      "type": "shape",
+      "shape": "line",
+      "x": 46,
+      "y": 192,
+      "x2": 42,
+      "y2": 199,
+      "stroke": "#70B6ED",
+      "strokeWidth": 3,
+      "bind": {
+        "x": {
+          "source": "feed.precip",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            46
+          ],
+          "clamp": true
+        },
+        "x2": {
+          "source": "feed.precip",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            479,
+            42
+          ],
+          "clamp": true
+        },
+        "stroke": {
+          "source": "feed.precip",
+          "stops": [
+            {
+              "at": 0,
+              "value": "#70B6ED"
+            },
+            {
+              "at": 2,
+              "value": "#F0F6FC"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "thermo-stem",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 111,
+      "y": 146,
+      "width": 5,
+      "height": 23,
+      "cornerRadius": 2,
+      "stroke": "#72E4BE",
+      "strokeWidth": 1,
+      "bind": {
+        "width": {
+          "source": "feed.weather",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            0,
+            5
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "thermo-bulb",
+      "type": "shape",
+      "shape": "circle",
+      "x": 113,
+      "y": 172,
+      "radius": 1,
+      "fill": "#72E4BE",
+      "bind": {
+        "radius": {
+          "source": "feed.weather",
+          "input": [
+            0,
+            1
+          ],
+          "output": [
+            0,
+            5
+          ],
+          "clamp": true
+        }
+      }
+    },
+    {
+      "id": "temperature",
+      "type": "text",
+      "x": 128,
+      "y": 143,
+      "value": "{feed.main}",
+      "size": 32,
+      "color": "#F5F8FC"
+    },
+    {
+      "id": "condition",
+      "type": "text",
+      "x": 124,
+      "y": 186,
+      "value": "{feed.label}",
+      "size": 8,
+      "color": "#95A8BD"
+    },
+    {
+      "id": "footer",
+      "type": "text",
+      "x": 120,
+      "y": 227,
+      "value": "{feed.footer}",
+      "size": 8,
+      "color": "#8193AA",
+      "anchor": "center"
+    }
+  ]
+}

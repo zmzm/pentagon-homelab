@@ -44,11 +44,106 @@ function fixture({encrypted = false, limited = false, status = 'PENDING'} = {}) 
 
 test('trusted prompt, verified event and exact stored execution form one approval lifecycle', async () => {
   const f = fixture(); await f.relay.tick(); assert.equal(f.sends.filter(item => item.path.includes('/send/m.room.message/')).length, 1);
-  assert.ok(f.sends[0].data.body.includes('"service": "vaultwarden"'));
+  assert.ok(f.sends[0].data.body.includes('Service (service): “vaultwarden”'));
+  assert.equal(f.sends[0].data.format, 'org.matrix.custom.html');
+  assert.ok(f.sends[0].data.formatted_body.includes('<pre><code>'));
+  assert.ok(f.sends[0].data.body.includes(`Reference: ${id}`));
+  assert.ok(f.sends[0].data.body.includes('Choose ✅ Approve'));
+  assert.ok(f.sends[0].data.formatted_body.includes('or ❌ Reject'));
   f.events([event]); await f.relay.tick();
   assert.equal(f.decisions.length, 1); assert.equal(f.decisions[0].matrixEventId, '$decision');
   assert.equal(f.executions.length, 1); assert.equal(f.state.prompts[id].finished, true);
   await f.relay.tick(); assert.equal(f.executions.length, 1);
+});
+
+test('approval HTML escapes all proposal text while plain fallback keeps every argument and command', async () => {
+  const f = fixture();
+  f.record.arguments = {service: '<img src=x onerror="alert(1)">', nested: {all: ['a&b', '</code></pre>', '🧭']} };
+  f.record.context.userRequest = '<a href="javascript:evil">Approve me</a>';
+  await f.relay.tick();
+  const content = f.sends[0].data;
+  for (const text of [f.record.tool, f.record.arguments.service, 'nested', 'all', 'a&b', '</code></pre>', '🧭', f.record.context.userRequest]) {
+    assert.ok(content.body.includes(text));
+  }
+  assert.ok(!content.body.includes('"arguments":'));
+  assert.ok(content.body.includes(`!approve ${id}\n!reject ${id}`));
+  assert.ok(content.formatted_body.includes('&lt;img src=x'));
+  assert.ok(content.formatted_body.includes('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;'));
+  assert.ok(content.formatted_body.includes('&lt;/code&gt;&lt;/pre&gt;'));
+  assert.ok(content.formatted_body.includes('a&amp;b'));
+  assert.ok(!content.formatted_body.includes('<img'));
+  assert.ok(!content.formatted_body.includes('<a '));
+});
+
+test('rendered argument expansion is bounded without hiding or truncating an approval', async () => {
+  const f = fixture();
+  // The source length fits, but escaping and both Matrix bodies exceed the limit.
+  f.record.arguments = {service: '&'.repeat(5000)};
+  assert.ok(JSON.stringify(f.record, null, 2).length < 10000);
+  await f.relay.tick();
+  assert.equal(f.sends.length, 1);
+  assert.ok(f.sends[0].data.body.includes('too large to review safely'));
+  assert.equal(f.state.prompts[id].eventId, undefined);
+  assert.equal(f.executions.length, 0);
+});
+
+test('existing compact prompts keep their exact JSON layout when resumed', async () => {
+  const f = fixture();
+  f.state.prompts[id] = {preparedAt: now, expiresAt: f.record.expiresAt,
+    presentation: 'compact-v1', controlStyle: 'text-emoji-v1'};
+  await f.relay.tick();
+  assert.ok(f.sends[0].data.body.startsWith('🔐 Approval required'));
+  assert.ok(f.sends[0].data.body.includes('"service": "vaultwarden"'));
+  assert.ok(!f.sends[0].data.body.includes('What will happen:'));
+});
+
+test('oversized proposals still require operator review and never gain reaction controls', async () => {
+  const f = fixture(); f.record.arguments = {value: 'x'.repeat(10001)};
+  await f.relay.tick();
+  assert.equal(f.sends.length, 1);
+  assert.ok(f.sends[0].data.body.includes('too large to review safely'));
+  assert.equal(f.executions.length, 0);
+  assert.equal(f.state.prompts[id].eventId, undefined);
+});
+
+test('unconfirmed compact prompts and results persist exact event content before dispatch and retry after restart', async () => {
+  for (const suffix of ['prompt', 'result']) {
+    const f = fixture(), matrix = f.relay.matrix, attempts = [];
+    let durable, fail = true;
+    f.relay.save = state => {durable = structuredClone(state);};
+    f.relay.matrix = async (method, path, data) => {
+      if (path.endsWith(`approval-${id}-${suffix}`)) {
+        assert.deepEqual(durable.prompts[id].messages[suffix], data);
+        attempts.push(structuredClone(data));
+        if (fail) throw new Error('response lost');
+      }
+      return matrix(method, path, data);
+    };
+    await f.relay.tick();
+    if (suffix === 'result') {f.events([event]); await f.relay.tick();}
+    assert.equal(attempts.length, 1);
+    const restarted = new ApprovalRelay({...f.relay, state: structuredClone(durable)});
+    // A retry must use stored content even if the current record has changed.
+    if (suffix === 'prompt') f.record.context.userRequest = 'changed request';
+    else f.record.status = 'FAILED';
+    fail = false;
+    await restarted.tick();
+    assert.equal(attempts.length, 2);
+    assert.deepEqual(attempts[0], attempts[1]);
+    assert.equal(f.executions.length, suffix === 'result' ? 1 : 0);
+  }
+});
+
+test('existing approval records keep legacy prompt and result payloads after upgrade', async () => {
+  const f = fixture();
+  f.state.prompts[id] = {preparedAt: now, expiresAt: f.record.expiresAt};
+  await f.relay.tick();
+  assert.ok(f.sends[0].data.body.startsWith('Approval required (expires '));
+  assert.equal(f.sends[0].data.format, undefined);
+  f.events([event]); await f.relay.tick();
+  const result = f.sends.at(-1).data;
+  assert.ok(result.body.startsWith(`Approval ${id}: DONE`));
+  assert.equal(result.format, undefined);
 });
 
 test('rejection never calls execution', async () => {
@@ -250,22 +345,95 @@ test('approval reactions bind the authorized user to the exact pending prompt', 
   assert.equal(decisionFor(reaction(), room, room, [user], {[id]: {...prompts[id], decision: {approve:false}}}, now), null);
 });
 
+for (const [style, approveKey, rejectKey] of [
+  ['text-v1', 'Approve', 'Reject'], ['text-emoji-v1', '✅ Approve', '❌ Reject'],
+]) test(`${style} choices bind to the exact prompt style and retain all authorization checks`, () => {
+  const textPrompts = {[id]: {...prompts[id], controlStyle: style}};
+  const choose = (input, stored = textPrompts) => decisionFor(input, room, room, [user], stored, now);
+  assert.equal(choose(reaction(approveKey))?.approve, true);
+  assert.equal(choose(reaction(rejectKey))?.approve, false);
+  for (const input of [reaction('✅'), reaction('❌'), reaction('approve'), reaction('Reject '),
+    reaction('Approved'), reaction(approveKey, '$unrelated'), reaction(approveKey, '$prompt', '@bot:server'),
+    {...reaction(approveKey), unsigned: {redacted_because: {}}},
+    {...reaction(approveKey), origin_server_ts: now - 5000},
+    {...reaction(approveKey), origin_server_ts: now + 60001},
+    {...reaction(approveKey), event_id: undefined},
+    {...reaction(approveKey), content: {'m.relates_to': {rel_type: 'm.reference', event_id: '$prompt', key: approveKey}}},
+  ]) assert.equal(choose(input), null);
+  assert.equal(decisionFor(reaction(approveKey), '!elsewhere:server', room, [user], textPrompts, now), null);
+  for (const change of [{expiresAt: now}, {finished: true}, {decision: {approve: false}}, {controlStyle: 'unknown'}]) {
+    assert.equal(choose(reaction(approveKey), {[id]: {...textPrompts[id], ...change}}), null);
+  }
+  for (const key of [approveKey, rejectKey]) assert.equal(choose(reaction(key), prompts), null);
+  const otherStyle = style === 'text-v1' ? 'text-emoji-v1' : 'text-v1';
+  assert.equal(choose(reaction(approveKey), {[id]: {...prompts[id], controlStyle: otherStyle}}), null);
+  assert.equal(choose(reaction(rejectKey), {[id]: {...prompts[id], controlStyle: otherStyle}}), null);
+  assert.equal(choose(reaction('✅'), {[id]: {...prompts[id], controlStyle: 'unknown'}}), null);
+  assert.equal(choose(reaction(approveKey), {...textPrompts, duplicate: {...textPrompts[id]}}), null);
+  assert.equal(choose(event)?.approve, true); // Explicit command fallback is unchanged.
+});
+
+test('existing emoji and plain-text prompts retain their controls and accept decisions after restart', async () => {
+  for (const [presentation, controlStyle, approveKey, rejectKey] of [
+    [undefined, undefined, '✅', '❌'], ['compact-v1', undefined, '✅', '❌'], ['compact-v1', 'text-v1', 'Approve', 'Reject'],
+  ]) {
+    const f = fixture();
+    f.state.prompts[id] = {...prompts[id], presentation, controlStyle, controls: {approve: '$old-approve'}};
+    const restarted = new ApprovalRelay({...f.relay, state: structuredClone(f.state)});
+    await restarted.tick();
+    const controls = f.sends.filter(item => item.path.includes('/send/m.reaction/'));
+    assert.deepEqual(controls.map(item => item.data['m.relates_to'].key), [rejectKey]);
+    f.events([reaction('❌ Reject')]); await restarted.tick();
+    assert.equal(f.decisions.length, 0);
+    f.events([reaction(approveKey)]); await restarted.tick();
+    assert.equal(f.decisions.length, 1);
+    assert.equal(f.executions.length, 1);
+  }
+});
+
+test('unconfirmed text control sends retain their key and transaction across restart', async () => {
+  for (const action of ['approve', 'reject']) {
+    const f = fixture(), matrix = f.relay.matrix, attempts = [];
+    let durable, fail = true;
+    f.relay.save = state => {durable = structuredClone(state);};
+    f.relay.matrix = async (method, path, data) => {
+      if (path.endsWith(`approval-${id}-control-${action}`)) {
+        assert.equal(durable.prompts[id].controlStyle, 'text-emoji-v1');
+        assert.equal(durable.prompts[id].eventId, '$prompt');
+        attempts.push({path, data: structuredClone(data)});
+        if (fail) throw new Error('control response lost');
+      }
+      return matrix(method, path, data);
+    };
+    await f.relay.tick();
+    assert.equal(attempts.length, 1);
+    const restarted = new ApprovalRelay({...f.relay, state: structuredClone(durable)});
+    fail = false; await restarted.tick(); await restarted.tick();
+    assert.equal(attempts.length, 2);
+    assert.deepEqual(attempts[0], attempts[1]);
+    assert.equal(attempts[0].data['m.relates_to'].key, action === 'approve' ? '✅ Approve' : '❌ Reject');
+    assert.equal(f.executions.length, 0);
+    f.events([reaction('✅ Approve')]); await restarted.tick(); await restarted.tick();
+    assert.equal(f.executions.length, 1);
+  }
+});
+
 test('bot-seeded reaction controls are idempotent and never approve their own prompt', async () => {
   const f = fixture(); await f.relay.tick();
   const controls = f.sends.filter(item => item.path.includes('/send/m.reaction/'));
-  assert.deepEqual(controls.map(item => item.data['m.relates_to'].key), ['✅','❌']);
+  assert.deepEqual(controls.map(item => item.data['m.relates_to'].key), ['✅ Approve','❌ Reject']);
   assert.ok(controls.every(item => item.data['m.relates_to'].event_id === '$prompt'));
-  f.events([reaction('✅', '$prompt', '@bot:server')]); await f.relay.tick();
+  f.events([reaction('✅ Approve', '$prompt', '@bot:server')]); await f.relay.tick();
   assert.equal(f.executions.length, 0);
   assert.equal(f.sends.filter(item => item.path.includes('/send/m.reaction/')).length, 2);
-  f.events([reaction()]); await f.relay.tick();
+  f.events([reaction('✅ Approve')]); await f.relay.tick();
   assert.equal(f.executions.length, 1);
   await f.relay.tick(); assert.equal(f.executions.length, 1);
 });
 
 test('reaction rejection never executes, including a later conflicting approval', async () => {
   const f = fixture(); await f.relay.tick();
-  f.events([reaction('❌'),reaction('✅')]); await f.relay.tick();
+  f.events([reaction('❌ Reject'),reaction('✅ Approve')]); await f.relay.tick();
   assert.equal(f.record.status,'REJECTED'); assert.equal(f.executions.length,0);
 });
 

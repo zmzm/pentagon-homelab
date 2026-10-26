@@ -1,0 +1,18 @@
+{
+  "version": "3.1.0-homelab.1",
+  "base": "https://github.com/giovi321/smalltv-mod/tree/v3.1.0",
+  "variant": "esp8266-dashboard",
+  "size": 696336,
+  "sha256": "f0a2f0f1cf2ce122bba07198dd4477f8df0703fcddf4f4e6ae015261536022d4",
+  "features": {
+    "theme": true,
+    "notify": true,
+    "ticker": false,
+    "usage": false,
+    "radar": false,
+    "ha": false
+  },
+  "platformio": "6.1.19",
+  "static_ram_bytes": 47724,
+  "flash_bytes": 692181
+}

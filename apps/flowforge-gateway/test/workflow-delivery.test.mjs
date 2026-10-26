@@ -15,8 +15,9 @@ const outputs = {
   'grounded-plan.md': '# Grounded\n\nImplementation details.\n'.repeat(450) + '\nGrounded ending.\n',
 };
 
-function fixture({run = {status: 'DONE', task_id: 'TASK-12', run_id: runId, outputs}, failUpload, failSend, encrypted = false} = {}) {
-  const state = {since: 'initial', prompts: {[id]: {finished: true, workflowPending: true}}};
+function fixture({run = {status: 'DONE', task_id: 'TASK-12', run_id: runId, outputs}, failUpload, failSend, encrypted = false, compact = false} = {}) {
+  const state = {since: 'initial', prompts: {[id]: {finished: true, workflowPending: true,
+    ...(compact ? {presentation: 'compact-v1'} : {})}}};
   const uploads = [], attempts = [], sent = new Map(), logs = [];
   let durable = structuredClone(state), now = 1000000, lookups = 0;
   const matrix = async (method, path, data, options) => {
@@ -72,6 +73,24 @@ test('one deterministic English notice and complete UTF-8 Markdown attachments, 
   assert.equal(f.delivery().status, 'delivered');
   f.restart(); await f.relay.tick();
   assert.equal(f.attempts.length, 3); assert.equal(f.uploads.length, 2); assert.equal(f.lookups, 1);
+});
+
+test('compact completion notices retry frozen HTML across restart without reuploading plans', async () => {
+  let fail = true;
+  const f = fixture({compact: true, failSend: path => {
+    if (path.endsWith('workflow-completion') && fail) throw new Error('response lost');
+  }});
+  await f.relay.tick();
+  const initial = f.attempts[0];
+  assert.equal(initial.data.format, 'org.matrix.custom.html');
+  assert.ok(initial.data.body.startsWith('Planning completed\n\nTask: TASK-12'));
+  assert.deepEqual(f.durable.prompts[id].messages['workflow-completion'], initial.data);
+  f.restart(); fail = false;
+  await f.relay.tick(); await f.relay.tick();
+  assert.deepEqual(f.attempts[1], initial);
+  assert.equal(f.uploads.length, 2);
+  assert.equal(f.lookups, 1);
+  assert.equal(f.delivery().status, 'delivered');
 });
 
 test('partial upload rejection preserves the other attachment and a bounded fallback plus full plans', async () => {
