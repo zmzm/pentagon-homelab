@@ -75,6 +75,9 @@ was loaded. Preserve applicable nested instructions and unrelated user changes.
 
 ## Scope and delivery
 
+Commit each completed logical change in this repository after relevant checks.
+Split independent changes into separate commits and preserve unrelated work.
+
 For shared engineering decisions, use the relevant vault reference above. For
 homelab API/state changes, identify affected consumers and retained records in
 the compatibility assessment. Use the
