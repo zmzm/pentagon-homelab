@@ -227,6 +227,38 @@ in Compose. The compact presentation change is locally tested, not live accepted
 
 ### Skills validation and rollout
 
+The 2026-11-06 temperature request took 477.8 seconds; four completed GLM
+calls accounted for about 462.5 seconds while diagnostic tools completed in
+under a second each. This profile has no host sensor/metrics tool. SOUL and
+the curated diagnosis skill now require an immediate capability-limit reply
+for live host metrics, without searching for disabled shell tools or treating
+documentation/container inspection as a measurement. This is model guidance,
+not an enforced per-request tool filter.
+
+For the small allowlisted catalog, `tools.tool_search.enabled: "off"` presents
+the selected schemas directly, removing search/describe model round trips.
+The existing tool selection and gateway permissions still apply. The tradeoff
+is a larger initial schema payload; re-evaluate if the catalog grows.
+Native `providers.zai.request_timeout_seconds` and `stale_timeout_seconds` are
+60 seconds. The request timeout is a transport wait limit and the stale setting
+applies to non-stream calls; neither is a total streamed-response deadline.
+`agent.gateway_timeout_warning: 60` sends one native inactivity warning and
+`gateway_timeout: 120` interrupts an inactive turn. Activity resets the watchdog,
+so these settings do not guarantee a two-minute total response time. Slow but
+active generation can continue. Existing `api_max_retries: 1` means one attempt
+in the installed runtime; automatic recovery remains disabled. No failed or
+uncertain tool write may be replayed because of a model timeout.
+
+These configuration keys were checked against the installed source. The native
+registration verifier also checks that CLI/Matrix/cron offer the full selected
+catalog directly and that native provider resolvers load the wait limits.
+Consumers are the native agent/provider loader and gateway watchdog; no gateway
+API, approval/execution record or native session format changes. Saved session
+prompts/loaded skills remain intact and can retain earlier guidance. Rollout
+requires reloading Hermes, then a fresh user-controlled session for prompt
+acceptance; do not reset sessions or send Matrix test events on the user's behalf.
+Local validation does not establish live GLM latency or Matrix timeout delivery.
+
 Run the offline installed-image checks from the repository root:
 
 ```bash

@@ -46,6 +46,11 @@ def verify_selection(config, personal, platform):
         raise RuntimeError(f'{platform}: prohibited tools present')
     if offered - selected - {'tool_search', 'tool_describe', 'tool_call'}:
         raise RuntimeError(f'{platform}: unexpected tools offered by progressive discovery')
+    # With this small fixed catalog, an extra model round trip just to discover
+    # a schema can cost minutes during provider degradation.
+    if offered != selected:
+        raise RuntimeError(f'{platform}: tools require extra discovery calls; '
+                           f'hidden={sorted(selected - offered)}')
     if not {'skills_list', 'skill_view'} <= offered:
         raise RuntimeError(f'{platform}: native skill read tools not offered')
     index = build_skills_system_prompt(available_tools=selected,
@@ -57,6 +62,18 @@ def verify_selection(config, personal, platform):
 
 def main():
     config = load_config()
+    from hermes_cli.timeouts import get_provider_request_timeout, get_provider_stale_timeout
+    provider = config['model']['provider']
+    model = config['model']['default']
+    request_wait = get_provider_request_timeout(provider, model)
+    stale_wait = get_provider_stale_timeout(provider, model)
+    warning = config['agent']['gateway_timeout_warning']
+    inactivity = config['agent']['gateway_timeout']
+    if not (request_wait and stale_wait and
+            0 < request_wait <= 60 and 0 < stale_wait <= 60 and
+            0 < warning < inactivity <= 120):
+        raise RuntimeError('Native provider waits or gateway inactivity limits exceed chat budgets')
+    print('PASS: native provider timeout resolvers and gateway inactivity budgets are bounded')
     expected = {
         'knowledge_search', 'flowforge_list_workflows',
         'flowforge_list_projects', 'flowforge_get_project', 'flowforge_get_catalog',

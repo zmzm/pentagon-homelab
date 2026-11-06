@@ -2,10 +2,19 @@ model:
   provider: zai
   default: glm-5.3
   base_url: https://api.z.ai/api/coding/paas/v4
+providers:
+  zai:
+    # Transport wait limits, not a total turn deadline or a tool timeout.
+    request_timeout_seconds: 60
+    stale_timeout_seconds: 60
 agent:
   max_turns: 15
   api_max_retries: 1
   auto_recovery_cycles: 0
+  # Native inactivity watchdog: warn once, then interrupt stalled work.
+  # Model/tool activity resets this clock; it is not a total run limit.
+  gateway_timeout_warning: 60
+  gateway_timeout: 120
   disabled_toolsets:
     - terminal
     - file
@@ -39,6 +48,11 @@ display:
       show_reasoning: false
 tool_loop_guardrails:
   non_interactive_hard_stop_enabled: true
+tools:
+  tool_search:
+    # The small allowlisted catalog fits directly in the model request.
+    # Avoid extra model calls just to search for and describe its schemas.
+    enabled: "off"
 mcp_servers:
   personal:
     command: python
