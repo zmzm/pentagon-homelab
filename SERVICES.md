@@ -75,6 +75,7 @@ ports. Their source and persistent data are separate from the core services.
 | Pentagon Gateway | Authenticated tool API, policy discovery, audit and approvals | `apps/pentagon-gateway` | `data/pentagon-gateway` |
 | Homelab broker | Allowlisted Docker inspection, logs and restart execution | `apps/pentagon-gateway` | none |
 | Matrix approval listener | Trusted approval verification, exact-action execution and sanitized planning-result attachments | `apps/pentagon-gateway` | `data/matrix-approvals` |
+| FlowForge inspector | Read-only registered projects, catalogs, queue records, doctor and sync preview | `apps/flowforge/inspector.py` | None; native sources mounted read-only |
 | FlowForge planning API | Planning around the existing workflow runner | `apps/flowforge` | `data/flowforge-api` |
 
 `homelab_list_services` reports configured tool coverage from gateway policy,

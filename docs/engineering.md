@@ -56,10 +56,11 @@ files matched that commit; unrelated local changes were preserved.
 | Component | Responsibility and implementation | Inspect with it |
 | --- | --- | --- |
 | Hermes | Conversation, native memory/session search, curated native skills, new conversational schedules. [Configuration](../apps/hermes/config.yaml), [SOUL](../apps/hermes/SOUL.md), [diagnosis skill](../apps/hermes/skills/homelab-service-diagnosis/SKILL.md), [selection plugin](../apps/hermes/plugins/homelab-skill-tools/__init__.py) | [Runtime/API guide](../apps/hermes/README.md), [bridge tests](../apps/hermes/test_gateway_mcp.py) and registration scripts below |
-| MCP bridge | Nine Python stdio tools forwarding HTTP; no independent permission authority. [gateway_mcp.py](../apps/hermes/gateway_mcp.py) | Bridge tests; effective installed CLI/Matrix/cron selection |
+| MCP bridge | Fifteen Python stdio tools forwarding HTTP; no independent permission authority. [gateway_mcp.py](../apps/hermes/gateway_mcp.py) | Bridge tests; effective installed CLI/Matrix/cron selection |
 | Personal gateway | Tool contracts, input validation, policy, persisted approvals, write-start/final audit, metrics. [server.mjs](../apps/pentagon-gateway/src/server.mjs), [operations.mjs](../apps/pentagon-gateway/src/operations.mjs), [common.mjs](../apps/pentagon-gateway/src/common.mjs) | [Policy actually mounted by Compose](../apps/pentagon-gateway/policy.example.json), [gateway tests](../apps/pentagon-gateway/test/gateway.test.mjs) |
 | Docker broker | Narrow authenticated inspect/log/restart integration. [broker.mjs](../apps/pentagon-gateway/src/broker.mjs), [restart.mjs](../apps/pentagon-gateway/src/restart.mjs) | [Restart tests](../apps/pentagon-gateway/test/restart.test.mjs) and gateway broker fixtures |
 | FlowForge adapter | Planning-only wrapper around existing `pipeline_runner.run_selected_task`; source snapshots, run records, private task queue. [adapter.py](../apps/flowforge/adapter.py) | [Adapter guide](../apps/flowforge/README.md), [tests](../apps/flowforge/test_adapter.py), mounted external runner/steps/agent definitions |
+| FlowForge inspector | Read-only registered project/catalog/queue/preflight/sync-preview facade over existing FlowForge readers, separate from planning workers. [inspector.py](../apps/flowforge/inspector.py) | [Inspection guide](../apps/flowforge/README.md#read-only-project-inspector), [tests](../apps/flowforge/test_inspector.py); no write endpoints/model credentials |
 | Matrix relay | Trusted approval-event filtering, stored-action execution request, polling and sanitized result delivery. [matrix-approvals.mjs](../apps/pentagon-gateway/src/matrix-approvals.mjs) | [Approval tests](../apps/pentagon-gateway/test/matrix-approvals.test.mjs), [delivery tests](../apps/pentagon-gateway/test/workflow-delivery.test.mjs) |
 | Knowledge Router / projections | Existing external CLI owns ranking/retrieval. [project-vault.mjs](../apps/pentagon-gateway/src/project-vault.mjs) and [homelab-vault.mjs](../apps/pentagon-gateway/src/homelab-vault.mjs) select sources, publish snapshots, translate citations | [Project tests](../apps/pentagon-gateway/test/project-vault.test.mjs), [homelab tests](../apps/pentagon-gateway/test/homelab-vault.test.mjs), external CLI selected by `KNOWLEDGE_CLI` |
 
@@ -73,7 +74,7 @@ planner, scheduler, retrieval engine, or general memory system to the gateway.
 
 **Enforced by this stack's Compose and code:** no published host ports; Hermes
 joins agent/egress networks, gateway joins agent/operations/upstream, broker
-joins operations only, adapter joins upstream/egress, relay joins agent/egress.
+joins operations only, adapter joins upstream/egress, inspector joins upstream only, relay joins agent/egress.
 Internal networks isolate broker and adapter from Hermes; gateway has no
 configured direct internet-egress network. This is not a host-compromise or
 compromised-neighbor security guarantee.
@@ -90,8 +91,11 @@ remain trusted; no arbitrary Docker URL, create, or exec endpoint is exposed.
 
 Hermes receives the gateway credential, never `APPROVER_TOKEN`. The relay has
 the approver and Matrix credentials, without broker/FlowForge credentials.
-Compose requests four distinct credentials; code explicitly checks only the
-gateway/approver pair for inequality. Operators must preserve all four-way
+The original four credentials remain separate. Inspection adds an independent
+`FLOWFORGE_INSPECT_TOKEN`, checked against the other configured credentials at
+gateway startup and delivered only to gateway/inspector. Among the original four,
+code explicitly checks only the gateway/approver pair for inequality.
+Operators must preserve all four-way
 separation. The approver API trusts its credential holder: it does not itself
 authenticate Matrix events. The relay verifies allowed sender, exact room,
 freshness, pending prompt, reaction target or strict text command, and ignores
@@ -230,7 +234,7 @@ Vault reference (coding-root relative), for compatibility and migrations:
 This section identifies the homelab contracts and their current readers.
 
 Externally consumed contracts include the [HTTP/approver API](../apps/hermes/README.md#stable-tool-api),
-the nine [MCP schemas](../apps/hermes/gateway_mcp.py), policy/configuration fields,
+the fifteen [MCP schemas](../apps/hermes/gateway_mcp.py), policy/configuration fields,
 broker POST `/execute`, adapter GET `/tasks`, POST `/run`, GET `/runs/:id`,
 Matrix commands/reactions/file events, operator CLI, and Knowledge Router CLI
 arguments/results/citation metadata. Most success responses wrap `data`;
@@ -426,6 +430,7 @@ for only the required service(s). Bind-mounted/config-only changes may require
 | Gateway contracts/executor | Rebuild/recreate `pentagon-gateway`; wait for health, inspect safe logs and relevant read path. Reload Hermes if MCP contract/selection changes too. |
 | Broker/restart logic | Rebuild/recreate `homelab-broker`; include gateway/relay only if their consumed contracts changed. Verify safe inspection; no test restart by default. |
 | Relay approval/delivery | Rebuild/recreate `matrix-approvals`; preserve claims/token/state; inspect sanitized logs and retained progress. No planner rebuild/rerun needed for delivery repair. |
+| Read-only FlowForge inspector | New internal service, independent token, explicit project allowlists and native-path read-only mounts. Rebuild/recreate gateway and reload Hermes for six added MCP tools. Review central defaults; preserve all planning/approval/delivery/native state. See [rollout](../apps/hermes/README.md#flowforge-project-inspection). |
 | Adapter snapshot/runner wrapper | Rebuild/recreate `flowforge-api` after active planning is settled. Native preflight is a separate state-producing check; no paid planning without its own authorization. External mounted runner/steps changes require compatibility review too. |
 | Hermes config/SOUL/skill/plugin/bridge | Recreate only `hermes` as needed; use `--force-recreate` for reload when Compose otherwise sees no change. Verify installed registration/MCP, then fresh user-controlled session for behavior. |
 | Policy or shared contract | Gateway and broker both load policy at startup; recreate both for policy changes, plus consumers actually affected. Keep single-instance topology. |

@@ -17,6 +17,33 @@ with patch.dict(os.environ, {'GATEWAY_TOKEN': 'fixture-gateway-token',
 
 
 class ServiceDiscovery(unittest.TestCase):
+    def test_flowforge_read_tools_have_no_write_flags_and_use_only_get(self):
+        functions = {
+            'flowforge_list_projects': (bridge.flowforge_list_projects, '/flowforge/projects'),
+            'flowforge_get_project': (bridge.flowforge_get_project, '/flowforge/projects/mentory'),
+            'flowforge_get_catalog': (bridge.flowforge_get_catalog, '/flowforge/projects/mentory/catalog'),
+            'flowforge_get_project_status': (bridge.flowforge_get_project_status, '/flowforge/projects/mentory/status'),
+            'flowforge_doctor': (bridge.flowforge_doctor, '/flowforge/projects/mentory/doctor'),
+            'flowforge_preview_sync': (bridge.flowforge_preview_sync, '/flowforge/projects/mentory/sync-preview'),
+        }
+        schemas = {tool.name: tool.model_dump(by_alias=True)['inputSchema']
+                   for tool in asyncio.run(bridge.mcp.list_tools())}
+        for name, (function, path) in functions.items():
+            with self.subTest(name=name):
+                expected = {'session_id', 'user_request'} | ({'project'} if name != 'flowforge_list_projects' else set())
+                self.assertEqual(set(schemas[name]['properties']), expected)
+                self.assertEqual(set(schemas[name]['required']), expected)
+                response = MagicMock()
+                response.__enter__.return_value.read.return_value = b'{"success":true}'
+                with patch.object(bridge.urllib.request, 'urlopen', return_value=response) as upstream:
+                    args = ('mentory', 'session', 'Inspect project') if name != 'flowforge_list_projects' else ('session', 'List projects')
+                    function(*args)
+                request = upstream.call_args.args[0]
+                self.assertEqual(request.full_url, 'http://gateway.fixture:8080' + path)
+                self.assertEqual(request.get_method(), 'GET')
+                self.assertIsNone(request.data)
+                self.assertIsNone(request.get_header('X-approval-id'))
+
     def test_registered_mcp_discovery_needs_audit_context_but_no_target_or_approval(self):
         tools = asyncio.run(bridge.mcp.list_tools())
         tool = next(tool for tool in tools if tool.name == 'homelab_list_services')

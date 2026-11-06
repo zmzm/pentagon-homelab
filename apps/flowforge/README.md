@@ -76,7 +76,7 @@ An accepted run is not the same as a completed plan.
 python3 -m unittest discover -s apps/flowforge -p 'test_*.py'
 ```
 
-The twelve tests cover input/path/hash boundaries, private snapshot isolation, restart
+The planning tests cover input/path/hash boundaries, private snapshot isolation, restart
 handling, central agent selection, fail-closed planning selection, canonical lock
 conflicts, and the actual existing FlowForge runner with its process boundary mocked.
 An isolated subprocess copies exactly the Python modules declared in Compose and
@@ -136,3 +136,66 @@ permission is needed.
 The adapter was rebuilt/recreated on 2026-10-26. Gateway task listing and the native
 OpenCode tool preflight passed; the production queue and prior run records were
 unchanged. No model call or live Matrix attachment test was part of that rollout.
+
+## Read-only project inspector
+
+`inspector.py` is a separate service in the same image, never part of the planning
+worker. It delegates to FlowForge project discovery/resolution, agent catalog,
+named workflow loading, project status, CLI preflight and `sync(dry_run=True)`.
+It does not run the CLI dispatcher, tasks, sync apply or reset. Authenticated GET
+endpoints are `/projects` and `/projects/:id` with optional `/catalog`, `/status`,
+`/doctor` or `/sync-preview`. Project IDs must be exact allowlisted identifiers.
+Both `FLOWFORGE_READ_PROJECTS` and gateway `flowforgeReadProjects` must permit the
+project. Host workflows are metadata, never new execution grants.
+
+Compose keeps it on the internal upstream network with a read-only filesystem,
+no model/notification/planning credentials and no writable state or Docker socket.
+`FLOWFORGE_INSPECT_TOKEN` is independent of the planning token. Its children
+inherit only configuration paths/project allowlist and basic environment, with
+bytecode disabled. Each child has a 20-second deadline and outputs at most 120 KB.
+Catalogs fail above 100 agents/workflows; status/previews explicitly bound windows.
+Exceptions become safe codes; no raw stack trace is returned.
+
+The reader mounts registered project configs, workflows and the central library
+at their native absolute paths, along with selected project/source/state roots.
+No entire FlowForge config/home directory is mounted: `notifications.env`, config
+backups and the private OpenCode database stay outside. The native FlowForge
+checkout is mounted read-only so atomic replacements of its legacy JSONL queue
+remain visible; its top-level `.env` is masked with `/dev/null`. This gives the
+reader filesystem access to that checkout, including its source/logs; the API
+exposes only selected metadata. The planning worker receives none of these new
+mounts. Do not place unrelated credentials in these configured source roots.
+
+Before rollout, verify all source roots and the empty `workflows` directory exist
+and belong to the service operator. The workflows bind disables Docker's automatic
+host-directory creation. The bundled `inspection-defaults.json` contains empty
+defaults, matching a host installation without `config.json`. **If the host has
+central defaults, set `FLOWFORGE_DEFAULTS_FILE` to that exact file**; otherwise
+the reader would resolve different settings. Keep the central library mount at
+the `agents_dir` selected by those configs. Other registered projects require
+explicit read-only source/queue/artifact mounts at their native paths and both
+allowlist changes; registration alone grants no inspection access.
+
+Directory-source state uses a directory bind so atomic queue replacements are
+visible. No host lock namespace or session DB is mounted, so status deliberately
+reports lock/session observation unavailable. Doctor checks only the inspection
+environment, not the production runner's credentials, session health or model
+execution. It does not establish a sandbox for host OpenCode executions. The binary is mounted
+both at the installed command path and its configured native path for preflight.
+
+The inspector writes no persisted records and reads current queues without
+recovery/migration. New APIs/MCP tools and policy/configuration are additive;
+the strict old gateway/broker policy readers require removing `flowforgeReadProjects`
+on rollback. Planning approvals, task hashes, private run records and Matrix
+delivery contracts remain unchanged. See [Hermes guidance](../hermes/README.md#flowforge-project-inspection)
+for tool selection, deployment and compatibility. This inspector extension was
+deployed on 2026-10-26 after user authorization; native registration and all six
+read-only MCP calls passed. Mentory doctor passed with no issues. The deployment
+also updated the broker because it shares the strict policy reader with gateway.
+See [deployment evidence](../../reports/2026-10-26-flowforge-read-inspection.md).
+
+`test_inspector.py` exercises real FlowForge readers in temporary projects,
+HTTP authentication/read-only routes, bounds, safe failures, token stripping and
+the exact module mount set in an isolated subprocess. Hash comparisons check
+that reads/previews neither alter queues nor create state/artifacts. The external
+FlowForge checkout is required for integration tests; no model is called.

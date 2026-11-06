@@ -72,8 +72,54 @@ def knowledge_search(query: str, session_id: str, user_request: str,
 
 @mcp.tool()
 def flowforge_list_workflows(session_id: str, user_request: str):
-    """List configured workflow names and their permission levels before running one."""
+    """List gateway-authorized workflow names and permission levels. This is not the host
+    FlowForge catalog; use flowforge_get_catalog to inspect a project's host capabilities."""
     return call("/flowforge/workflows", session_id, user_request)
+
+
+@mcp.tool()
+def flowforge_list_projects(session_id: str, user_request: str):
+    """List registered FlowForge projects allowed for read access. Ask the user when
+    the requested project is ambiguous. Read access does not grant execution."""
+    return call("/flowforge/projects", session_id, user_request)
+
+
+@mcp.tool()
+def flowforge_get_project(project: str, session_id: str, user_request: str):
+    """Inspect one exact registered project's configuration and effective workflow steps.
+    No arbitrary paths or overrides. Inspection does not execute tasks."""
+    return call(f"/flowforge/projects/{urllib.parse.quote(project, safe='')}", session_id, user_request)
+
+
+@mcp.tool()
+def flowforge_get_catalog(project: str, session_id: str, user_request: str):
+    """Read host workflows and effective agent metadata for an exact allowed project.
+    Prompt bodies and credentials are excluded. Host capability is not execution
+    permission or proof of readiness; inspect doctor and gateway workflows separately."""
+    return call(f"/flowforge/projects/{urllib.parse.quote(project, safe='')}/catalog", session_id, user_request)
+
+
+@mcp.tool()
+def flowforge_get_project_status(project: str, session_id: str, user_request: str):
+    """Read production queue counts and a bounded task window for an exact project.
+    This is separate from isolated planning runs. Lock/session observation is unavailable;
+    running rows do not prove a live worker, and limited task windows are marked truncated."""
+    return call(f"/flowforge/projects/{urllib.parse.quote(project, safe='')}/status", session_id, user_request)
+
+
+@mcp.tool()
+def flowforge_doctor(project: str, session_id: str, user_request: str):
+    """Read-only configuration/dependency preflight for an exact project in the inspection
+    container. Does not run agents, recover tasks, or prove host execution readiness."""
+    return call(f"/flowforge/projects/{urllib.parse.quote(project, safe='')}/doctor", session_id, user_request)
+
+
+@mcp.tool()
+def flowforge_preview_sync(project: str, session_id: str, user_request: str):
+    """Preview task-directory synchronization without applying changes or resetting tasks.
+    Directory-source projects only; JSONL projects such as Mentory do not need sync.
+    Reports bounded task IDs and full change counts; no queue, artifact or lock writes."""
+    return call(f"/flowforge/projects/{urllib.parse.quote(project, safe='')}/sync-preview", session_id, user_request)
 
 
 @mcp.tool()

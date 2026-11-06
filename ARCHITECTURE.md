@@ -45,7 +45,7 @@ Hermes uses GLM and Matrix through outbound connections. CLI, Matrix and cron
 share an explicit personal MCP tool selection:
 
 ```text
-Hermes → MCP stdio bridge → gateway → Knowledge Router / FlowForge planning API
+Hermes → MCP stdio bridge → gateway → Knowledge Router / FlowForge planning API / read-only FlowForge inspector
                                   └→ isolated Docker broker (inspect/log/restart)
 ```
 

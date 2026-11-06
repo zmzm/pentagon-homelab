@@ -12,6 +12,8 @@ const canonical = value => JSON.stringify(value, function (_key, item) {
 export function createGateway({env, policy, execute = executor(env, policy), state = '/state'}) {
   validatePolicy(policy);
   check(env.GATEWAY_TOKEN?.length >= 32 && env.APPROVER_TOKEN?.length >= 32 && env.GATEWAY_TOKEN !== env.APPROVER_TOKEN, 'INVALID_AUTH_CONFIG');
+  if (env.FLOWFORGE_INSPECT_URL) check(env.FLOWFORGE_INSPECT_TOKEN?.length >= 32 &&
+    ![env.FLOWFORGE_TOKEN, env.GATEWAY_TOKEN, env.APPROVER_TOKEN, env.BROKER_TOKEN].includes(env.FLOWFORGE_INSPECT_TOKEN), 'INVALID_INSPECTION_AUTH_CONFIG');
   mkdirSync(`${state}/approvals`, {recursive: true, mode: 0o700});
   const secrets = Object.entries(env).filter(([k]) => /TOKEN|KEY|PASSWORD|SECRET/.test(k)).map(([,v]) => v);
   const counts = {tool_calls_total: 0, tool_call_errors_total: 0, tool_call_duration_ms_sum: 0, approvals_requested: 0, approvals_rejected: 0, workflow_runs: 0};
@@ -112,6 +114,17 @@ export function createGateway({env, policy, execute = executor(env, policy), sta
       else if (req.method === 'GET' && path === '/flowforge/tasks') { tool = 'flowforge.listTasks'; args = {}; }
       else if (req.method === 'GET' && /^\/flowforge\/runs\/[0-9a-f-]{36}$/.test(path)) { tool = 'flowforge.getRun'; args = {run_id: path.split('/').at(-1)}; }
       else if (req.method === 'GET' && path === '/flowforge/workflows') { tool = 'flowforge.listWorkflows'; args = {}; }
+      else if (path === '/flowforge/projects' || path.startsWith('/flowforge/projects/')) {
+        check(req.method === 'GET', 'METHOD_NOT_ALLOWED', 405);
+        check(!url.search, 'INVALID_INPUT');
+        if (path === '/flowforge/projects') { tool = 'flowforge.listProjects'; args = {}; }
+        else {
+          const match = path.match(/^\/flowforge\/projects\/([a-zA-Z0-9_-]{1,100})(?:\/(catalog|status|doctor|sync-preview))?$/);
+          check(match, 'NOT_FOUND', 404);
+          const tools = {catalog: 'flowforge.getCatalog', status: 'flowforge.getProjectStatus', doctor: 'flowforge.doctor', 'sync-preview': 'flowforge.previewSync'};
+          tool = match[2] ? tools[match[2]] : 'flowforge.getProject'; args = {project: match[1]};
+        }
+      }
       else if (path === '/homelab/services') {
         check(req.method === 'GET', 'METHOD_NOT_ALLOWED', 405);
         check(!url.search, 'INVALID_INPUT');

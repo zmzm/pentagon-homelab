@@ -9,5 +9,6 @@
     "backrest": {"container": "backrest", "restart": "CONFIRM"}
   },
   "workflows": {"task-analysis": {"permission": "CONFIRM"}},
+  "flowforgeReadProjects": ["mentory"],
   "projects": {"mentory": "/vaults/mentory", "default": "/vaults/coding", "homelab": "/vaults/homelab"}
 }

@@ -10,7 +10,7 @@ monitoring and existing application services remain independent.
 | Capability | Implementation and verification |
 | --- | --- |
 | Matrix + GLM | Running; a real authorized Matrix request inspected Vaultwarden, read logs and returned an answer |
-| Personal MCP tools | Nine tools verified through native registration and effective CLI/Matrix/cron selections; read-only discovery and Vaultwarden tool chain tested |
+| Personal MCP tools | Fifteen tools deployed and verified through native CLI/Matrix/cron selection, including six read-only FlowForge tools; see inspection acceptance below. |
 | Service discovery | Deployed 2026-10-22: policy-backed configured tool coverage, with identifiers and informational restart levels; no Docker query or runtime health claim |
 | Permissions | READ/AUTO_SAFE/CONFIRM/DENY; exact-action, durable single-use approvals; no model approver credential |
 | Matrix approvals | Separate trusted listener posts exact actions and accepts commands or seeded reactions only from allowed Matrix users in the configured room; security tests pass |
@@ -30,7 +30,7 @@ The host currently cannot enforce Docker memory limits; configured limits are ad
 Matrix / GLM ← egress → Hermes → MCP stdio bridge → pentagon-gateway
 Matrix ← egress → trusted approval listener ───────────────┘
                                       gateway ├─ Knowledge Router CLI + read-only vault
-                                              ├─ private upstream → FlowForge planning API
+                                              ├─ private upstream → FlowForge planning API / read-only inspector
                                               └─ operations network → Docker broker
 ```
 
@@ -64,7 +64,7 @@ From `apps/hermes`, use the private `.env` based on `.env.example` (mode 600).
 - `MATRIX_ALLOWED_USERS`: comma-separated user IDs permitted to trigger/approve requests.
 - `MATRIX_ALLOWED_ROOMS`: rooms available for interaction.
 - `MATRIX_HOME_ROOM`: one exact room ID for scheduled results and approvals.
-- `GATEWAY_TOKEN`, `APPROVER_TOKEN`, `BROKER_TOKEN`, `FLOWFORGE_TOKEN`: four distinct random tokens, at least 32 characters. Generate with `openssl rand -hex 32`.
+- `GATEWAY_TOKEN`, `APPROVER_TOKEN`, `BROKER_TOKEN`, `FLOWFORGE_TOKEN`, `FLOWFORGE_INSPECT_TOKEN`: five distinct random tokens, at least 32 characters. Generate with `openssl rand -hex 32`.
 - `DOCKER_GID`: host socket group from `stat -c %g /var/run/docker.sock` (984 on this host).
 - `FLOWFORGE_URL`: `http://flowforge-api:8082`.
 - `KNOWLEDGE_ROUTER_PATH`, `CODING_VAULT_PATH`, `FLOWFORGE_PATH`, `FLOWFORGE_AGENT_LIBRARY_PATH`, `MENTORY_PROJECT_PATH`, `OPENCODE_BINARY`: existing source paths, documented in the example.
@@ -79,7 +79,7 @@ Do not overwrite an existing `.env` with the example: it contains live credentia
 
 ```bash
 docker compose config --quiet
-docker compose build pentagon-gateway matrix-approvals flowforge-api homelab-broker
+docker compose build pentagon-gateway matrix-approvals flowforge-api flowforge-inspect homelab-broker
 docker compose up -d
 docker compose ps
 ```
@@ -236,7 +236,7 @@ python3 scripts/verify_hermes_skills.py
 This uses the live container's exact image ID with networking **disabled**, fake
 gateway credentials, a disposable tmpfs Hermes home and a copy of only the
 existing skills. It mounts the proposed configuration/curated skill/helper,
-registers all nine MCP schemas through Hermes' native subprocess
+registers all fifteen MCP schemas through Hermes' native subprocess
 environment, checks effective CLI/Matrix/cron schemas (including prohibited
 tools and absence of `skill_manage`), and verifies the native prompt index,
 `skills_list` and `skill_view` resolve the expected mounted skill and exact bytes.
@@ -587,6 +587,12 @@ use verified Matrix event metadata from the separate trusted listener.
 | GET `/flowforge/tasks` | — | READ |
 | POST `/flowforge/run` | `{workflow,input}` | workflow policy; task-analysis is CONFIRM |
 | GET `/flowforge/runs/:id` | — | READ |
+| GET `/flowforge/projects` | — | READ; registered projects filtered by allowlists |
+| GET `/flowforge/projects/:project` | — | READ; configuration and effective steps |
+| GET `/flowforge/projects/:project/catalog` | — | READ; host workflows and agent metadata |
+| GET `/flowforge/projects/:project/status` | — | READ; production queue records |
+| GET `/flowforge/projects/:project/doctor` | — | READ; inspection-container preflight |
+| GET `/flowforge/projects/:project/sync-preview` | — | READ; directory-source dry run only |
 | GET `/homelab/services` | — | READ; configured tool coverage from policy |
 | GET `/homelab/services/:name` | — | READ |
 | GET `/homelab/services/:name/logs` | `lines=1..500`, optional ISO `since` | READ |
@@ -668,13 +674,81 @@ directory-source projects, not that registration. Opening the TUI or calling
 `flowforge doctor --project mentory --json` and
 `flowforge status --project mentory --json` does not run a task.
 
-Host task execution is a separate operator action. Hermes's current tools expose
-only the isolated Mentory planning adapter; they do not expose the host CLI,
-arbitrary project selection, synchronization, task resets or full implementation.
+Host task execution is a separate operator action. Hermes can inspect allowlisted
+registered projects through the tools below. Its only execution tool remains the
+isolated Mentory planning adapter; it does not expose the host CLI, arbitrary
+project selection, synchronization writes, task resets or full implementation.
 For a full execution or another project, explain the available boundary and the
 need for an operator or a separately reviewed tool/policy extension. Do not replace
 an analysis request with the host three-step workflow or imply that planning marks
 the production task done. Existing headless schedules remain independent.
+
+### FlowForge project inspection
+
+For questions about FlowForge's available projects, agents, workflows or queue,
+call `flowforge_list_projects`. Resolve an exact project ID; ask the user when
+ambiguous. The currently configured read project is `mentory`.
+
+| MCP tool | What it reads |
+| --- | --- |
+| `flowforge_get_project(project)` | Source mode, configuration limits and effective default steps |
+| `flowforge_get_catalog(project)` | Named host workflows, project steps and effective agent IDs/descriptions/models/origins/issues |
+| `flowforge_get_project_status(project)` | Queue counts and up to 50 task records, with running/failed records first |
+| `flowforge_doctor(project)` | Existing FlowForge preflight over resources mounted in the inspection container |
+| `flowforge_preview_sync(project)` | Existing `sync(dry_run=True)` report; full change counts and up to 50 IDs per category |
+
+The host catalog reports capabilities, not gateway permission. Only
+`flowforge_list_workflows` lists gateway-authorized execution workflows; it still
+lists `task-analysis` only. Agent issues include disabled or unresolved agents;
+the existence of an agent or workflow does not establish readiness. Doctor checks
+the inspection container, never the host service environment or a model run.
+
+Project status reads production queue records, distinct from `flowforge_get_run`
+which reads private planning runs. `task_total` includes all records; `todo_count`
+and `counts` describe queue state, with an explicit `unknown_status_count`.
+`truncated` marks the 50-record window. Lock and session observation are explicitly
+unavailable: no host lock namespace or private OpenCode session DB is mounted.
+Do not infer a live worker or recover stale rows from a `running` record.
+Mentory uses JSONL, so sync preview returns `applicable:false` with
+`DIRECTORY_SOURCE_REQUIRED`, without changing anything. Directory-mode previews
+always return `applied:false`; source changes need a separate operator reset decision.
+
+The separate `flowforge-inspect` service is on the internal upstream network only.
+It receives its own API token, no model/Matrix/planning token, Docker socket or
+writable volume. Gateway startup rejects reuse of another configured token for
+`FLOWFORGE_INSPECT_TOKEN`. Requests select fixed read functions in a 20-second
+subprocess; there is no arbitrary CLI, config path, workspace override or write
+endpoint. Agent prompt bodies, permissions and notification credentials are
+excluded from API results. Metadata/errors are bounded; gateway redaction/audit
+still apply. The planning worker's two agent mounts, private queue, approvals and
+delivery contract are unchanged. See [inspection mounts](../flowforge/README.md#read-only-project-inspector).
+
+For subsequent authorized rollouts, prepare an independent
+inspection token in the private environment; align `FLOWFORGE_READ_PROJECTS` with
+gateway `policy.flowforgeReadProjects`. Missing policy fields deny project reads.
+Review the mounts/defaults described in the adapter guide, then validate Compose,
+build/start only `flowforge-inspect`, rebuild/recreate `pentagon-gateway` and
+`homelab-broker` (both read the shared strict policy), and reload Hermes for its
+bridge/configuration/SOUL. Leave planning workers, relay and production
+FlowForge timers untouched. Run native registration and all six read-only calls;
+verify catalog permissions, queue counts and JSONL preview behavior without a paid
+run or Matrix event. Refresh/check the existing homelab knowledge projection after
+authorization; editing this README alone does not update the deployed snapshot.
+
+Compatibility: six MCP schemas/routes and optional `flowforgeReadProjects` policy
+are additive. Existing planning APIs and retained adapter runs, gateway approvals/
+audit, relay delivery records and Hermes native state keep their formats. Rollback
+must remove the six MCP include entries and new policy field before loading the
+old strict gateway/broker policy readers; preserve all current state. An older gateway can
+otherwise still perform the original planning workflow.
+
+The inspection extension was deployed on 2026-10-26 after user authorization.
+`flowforge-inspect` was added; gateway, broker and Hermes were recreated. Native
+registration verified all 15 personal tools for CLI/Matrix/cron, and read-only MCP
+smoke verified all six new operations and the existing Vaultwarden inspection.
+Mentory doctor passed, 11 central agents were visible (two disabled), and JSONL
+sync preview remained inapplicable without writes. Planning workers, relay and
+production FlowForge timers were left running. See [deployment evidence](../../reports/2026-10-26-flowforge-read-inspection.md).
 
 ### FlowForge status, failures and result delivery
 
@@ -750,9 +824,9 @@ docker compose exec -T hermes python - < ../../scripts/verify_hermes_mcp.py
 
 These commands are retained for subsequent operator rollouts; the deployment
 record describes the completed rollout and exact checks performed.
-No policy edit, new credential, broker restart or restart of Matrix or the
-inventoried applications is needed for discovery. Registration verification expects
-nine personal tools and checks effective CLI, Matrix and cron selections. The
+For homelab service discovery alone, no policy edit, new credential, broker restart
+or restart of Matrix or the inventoried applications is needed. Registration verification expects
+fifteen personal tools and checks effective CLI, Matrix and cron selections. The
 MCP smoke check reads policy coverage before its existing Vaultwarden inspection.
 Live model/Matrix behavioral acceptance remains a separate authorized step; do
 not request a restart to test discovery or diagnosis.

@@ -5,7 +5,11 @@ import { openProjectVault, citeProjectResults } from './project-vault.mjs';
 const exec = promisify(execFile);
 const levels = ['AUTO_SAFE', 'CONFIRM', 'DENY'];
 export function validatePolicy(policy) {
-  object(policy, ['services', 'workflows', 'projects']);
+  object(policy, ['services', 'workflows', 'projects', 'flowforgeReadProjects']);
+  if (policy.flowforgeReadProjects !== undefined) {
+    check(Array.isArray(policy.flowforgeReadProjects) && policy.flowforgeReadProjects.length <= 100 &&
+      policy.flowforgeReadProjects.every(p => typeof p === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(p)));
+  }
   for (const [name, item] of Object.entries(policy.services)) {
     check(/^[a-z0-9_-]+$/.test(name));
     object(item, ['container', 'restart']);
@@ -28,6 +32,13 @@ export function operation(tool, args, policy) {
   }
   if (tool === 'flowforge.listWorkflows') { object(args, []); return 'READ'; }
   if (tool === 'flowforge.listTasks') { object(args, []); return 'READ'; }
+  if (tool === 'flowforge.listProjects') { object(args, []); return 'READ'; }
+  if (['flowforge.getProject', 'flowforge.getCatalog', 'flowforge.getProjectStatus', 'flowforge.doctor', 'flowforge.previewSync'].includes(tool)) {
+    object(args, ['project']);
+    check(typeof args.project === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(args.project));
+    check((policy.flowforgeReadProjects || []).includes(args.project), 'PROJECT_NOT_ALLOWED', 403);
+    return 'READ';
+  }
   if (tool === 'homelab.listServices') { object(args, []); return 'READ'; }
   if (tool === 'flowforge.getRun') {
     object(args, ['run_id']); check(typeof args.run_id === 'string' && /^[0-9a-f-]{36}$/.test(args.run_id)); return 'READ';
@@ -72,6 +83,25 @@ export function executor(env, policy) {
       catch { check(false, 'KNOWLEDGE_FAILED', 502); }
     }
     if (tool === 'flowforge.listWorkflows') return {workflows: Object.entries(policy.workflows).map(([name, p]) => ({name, permission: p.permission}))};
+    const inspectionRoutes = {
+      'flowforge.getProject': '', 'flowforge.getCatalog': '/catalog',
+      'flowforge.getProjectStatus': '/status', 'flowforge.doctor': '/doctor',
+      'flowforge.previewSync': '/sync-preview',
+    };
+    if (tool === 'flowforge.listProjects' || Object.hasOwn(inspectionRoutes, tool)) {
+      check(env.FLOWFORGE_INSPECT_URL && env.FLOWFORGE_INSPECT_TOKEN, 'FLOWFORGE_INSPECTION_NOT_CONFIGURED', 503);
+      const route = tool === 'flowforge.listProjects' ? '/projects' : `/projects/${args.project}${inspectionRoutes[tool]}`;
+      const result = await remote(env.FLOWFORGE_INSPECT_URL + route, env.FLOWFORGE_INSPECT_TOKEN, undefined, 'GET');
+      check(result && typeof result === 'object' && result.success !== false, 'FLOWFORGE_INSPECTION_FAILED', 502);
+      if (tool === 'flowforge.listProjects') {
+        check(Array.isArray(result.projects) && result.projects.every(p => p && typeof p.project === 'string'), 'INVALID_INSPECTION_RESPONSE', 502);
+        return {scope: 'configured_read_access', projects: result.projects
+          .filter(p => (policy.flowforgeReadProjects || []).includes(p.project))
+          .map(p => ({project: p.project, access: 'READ'}))};
+      }
+      check(result.project === args.project && result.execution_allowed === false, 'INVALID_INSPECTION_RESPONSE', 502);
+      return result;
+    }
     if (tool === 'homelab.listServices') return {
       coverage: 'configured_tool_coverage',
       services: Object.entries(policy.services).map(([service, item]) => ({service, restart: item.restart})),

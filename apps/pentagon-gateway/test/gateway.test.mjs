@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import http from 'node:http';
 import { createGateway } from '../src/server.mjs';
 import { createBroker, decodeLogs } from '../src/broker.mjs';
 import { operation, executor } from '../src/operations.mjs';
@@ -31,6 +32,77 @@ test('unauthorized access and agent self-approval cannot call a tool', async t =
   assert.equal((await request('/homelab/services/missing')).status, 403);
   assert.equal((await request('/homelab/services/caddy/restart', {method: 'POST', data: {}})).status, 403);
   assert.equal(calls, 0);
+});
+
+test('inspection authentication must be independent of planning, gateway, approver and broker credentials', t => {
+  const state = mkdtempSync(`${tmpdir()}/inspection-auth-test-`);
+  t.after(() => rmSync(state, {recursive: true}));
+  const configured = {...env, FLOWFORGE_TOKEN: 'd'.repeat(32), FLOWFORGE_INSPECT_URL: 'http://inspection.fixture'};
+  for (const token of [undefined, 'short', configured.FLOWFORGE_TOKEN, env.GATEWAY_TOKEN, env.APPROVER_TOKEN, env.BROKER_TOKEN]) {
+    assert.throws(() => createGateway({env: {...configured, FLOWFORGE_INSPECT_TOKEN: token}, policy, state}), /INVALID_INSPECTION_AUTH_CONFIG/);
+  }
+  assert.doesNotThrow(() => createGateway({env: {...configured, FLOWFORGE_INSPECT_TOKEN: 'e'.repeat(32)}, policy, state}));
+  for (const flowforgeReadProjects of ['mentory', ['../mentory'], [false]]) {
+    assert.throws(() => createGateway({env, policy: {...policy, flowforgeReadProjects}, state}), /INVALID_INPUT/);
+  }
+});
+
+test('FlowForge read tools require exact allowed projects and never create approvals', async t => {
+  const configured = {...policy, flowforgeReadProjects: ['mentory']};
+  const calls = [];
+  const {request, state} = await fixture(t, async (tool, args) => {
+    calls.push({tool, args}); return {project: args.project, execution_allowed: false};
+  }, configured);
+  const actions = {'': 'getProject', '/catalog': 'getCatalog', '/status': 'getProjectStatus', '/doctor': 'doctor', '/sync-preview': 'previewSync'};
+  for (const [suffix, action] of Object.entries(actions)) {
+    const result = await request('/flowforge/projects/mentory' + suffix);
+    assert.equal(result.status, 200);
+    assert.equal(calls.at(-1).tool, 'flowforge.' + action);
+    assert.deepEqual(calls.at(-1).args, {project: 'mentory'});
+    assert.equal(operation('flowforge.' + action, {project: 'mentory'}, configured), 'READ');
+    assert.throws(() => operation('flowforge.' + action, {project: 'mentory', apply: true}, configured), /INVALID_INPUT/);
+    assert.throws(() => operation('flowforge.' + action, {}, configured), /INVALID_INPUT/);
+    assert.throws(() => operation('flowforge.' + action, {project: '../mentory'}, configured), /INVALID_INPUT/);
+    assert.throws(() => operation('flowforge.' + action, {project: 'mentory'}, policy), /PROJECT_NOT_ALLOWED/);
+  }
+  const before = calls.length;
+  assert.equal((await request('/flowforge/projects/other')).status, 403);
+  assert.equal((await request('/flowforge/projects/mentory?workflow=execution')).status, 400);
+  assert.equal((await request('/flowforge/projects?project=other')).status, 400);
+  assert.equal((await request('/flowforge/projects/mentory', {method: 'POST', data: {}})).status, 405);
+  assert.equal((await request('/flowforge/projects/mentory/reset')).status, 404);
+  assert.equal((await request('/flowforge/projects/mentory/sync')).status, 404);
+  assert.equal((await request('/flowforge/projects', {token: env.APPROVER_TOKEN})).status, 401);
+  assert.equal((await request('/flowforge/projects', {headers: {'x-session-id': ''}})).status, 400);
+  assert.equal(calls.length, before);
+  assert.deepEqual(readdirSync(`${state}/approvals`), []);
+  assert.ok(readFileSync(`${state}/audit.jsonl`, 'utf8').includes('flowforge.getCatalog'));
+  // Discovery adds no host execution workflow, and old planning approval is preserved.
+  assert.equal((await request('/flowforge/run', {method: 'POST', data: {workflow: 'default'}})).status, 403);
+});
+
+test('FlowForge inspection executor forwards GET only, filters discovery and rejects mismatched upstream identity', async t => {
+  const requests = [];
+  let wrongIdentity = false;
+  const upstream = http.createServer((req, res) => {
+    requests.push({method: req.method, path: req.url, authorization: req.headers.authorization});
+    res.writeHead(200, {'content-type': 'application/json'});
+    res.end(JSON.stringify(req.url === '/projects'
+      ? {projects: [{project: 'mentory', private: 'omit'}, {project: 'hidden'}]}
+      : {project: wrongIdentity ? 'hidden' : 'mentory', execution_allowed: false, scope: 'host_configuration'}));
+  });
+  await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => upstream.close(resolve)));
+  const configured = {...policy, flowforgeReadProjects: ['mentory']};
+  const execute = executor({FLOWFORGE_INSPECT_URL: `http://127.0.0.1:${upstream.address().port}`, FLOWFORGE_INSPECT_TOKEN: 'inspection-token'}, configured);
+  assert.deepEqual(await execute('flowforge.listProjects', {}), {scope: 'configured_read_access', projects: [{project: 'mentory', access: 'READ'}]});
+  for (const [tool, suffix] of Object.entries({getProject: '', getCatalog: '/catalog', getProjectStatus: '/status', doctor: '/doctor', previewSync: '/sync-preview'})) {
+    await execute('flowforge.' + tool, {project: 'mentory'});
+    assert.deepEqual(requests.at(-1), {method: 'GET', path: '/projects/mentory' + suffix, authorization: 'Bearer inspection-token'});
+  }
+  wrongIdentity = true;
+  await assert.rejects(execute('flowforge.getCatalog', {project: 'mentory'}), /INVALID_INSPECTION_RESPONSE/);
+  await assert.rejects(executor({}, configured)('flowforge.listProjects', {}), /FLOWFORGE_INSPECTION_NOT_CONFIGURED/);
 });
 
 test('service discovery returns only configured policy coverage without a broker or Docker backend', async t => {

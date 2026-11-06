@@ -45,6 +45,8 @@ services:
       BROKER_TOKEN: ${BROKER_TOKEN:?set a different broker token}
       BROKER_URL: http://homelab-broker:8081
       FLOWFORGE_URL: ${FLOWFORGE_URL:-}
+      FLOWFORGE_INSPECT_URL: http://flowforge-inspect:8083
+      FLOWFORGE_INSPECT_TOKEN: ${FLOWFORGE_INSPECT_TOKEN:?set an independent read-only inspection token}
       FLOWFORGE_TOKEN: ${FLOWFORGE_TOKEN:-}
       KNOWLEDGE_CLI: /knowledge-router/dist/cli.js
     volumes:
@@ -122,6 +124,61 @@ services:
         condition: service_healthy
     mem_limit: 128m
     cpus: 0.5
+  flowforge-inspect:
+    build: ../flowforge
+    command: [python3, inspector.py]
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      FLOWFORGE_INSPECT_TOKEN: ${FLOWFORGE_INSPECT_TOKEN:?set FLOWFORGE_INSPECT_TOKEN}
+      FLOWFORGE_READ_PROJECTS: ${FLOWFORGE_READ_PROJECTS:-mentory}
+      FLOWFORGE_CONFIG_DIR: ${FLOWFORGE_CONFIG_PATH:-/home/pentagon-admin/.config/flowforge}
+      FLOWFORGE_STATE_DIR: ${FLOWFORGE_STATE_PATH:-/home/pentagon-admin/.local/state/flowforge}
+      PYTHONDONTWRITEBYTECODE: "1"
+      HOME: /nonexistent-inspection-home
+    volumes:
+      # Preserve native absolute paths from registered project configurations.
+      # No config-root bind: notifications.env and backups stay outside this container.
+      - ${FLOWFORGE_CONFIG_PATH:-/home/pentagon-admin/.config/flowforge}/projects:${FLOWFORGE_CONFIG_PATH:-/home/pentagon-admin/.config/flowforge}/projects:ro
+      - type: bind
+        source: ${FLOWFORGE_CONFIG_PATH:-/home/pentagon-admin/.config/flowforge}/workflows
+        target: ${FLOWFORGE_CONFIG_PATH:-/home/pentagon-admin/.config/flowforge}/workflows
+        read_only: true
+        bind:
+          create_host_path: false
+      - ${FLOWFORGE_DEFAULTS_FILE:-../flowforge/inspection-defaults.json}:${FLOWFORGE_CONFIG_PATH:-/home/pentagon-admin/.config/flowforge}/config.json:ro
+      - ${FLOWFORGE_AGENT_LIBRARY_PATH:-/home/pentagon-admin/.config/flowforge/library}:${FLOWFORGE_AGENT_LIBRARY_PATH:-/home/pentagon-admin/.config/flowforge/library}:ro
+      - type: bind
+        source: ${FLOWFORGE_STATE_PATH:-/home/pentagon-admin/.local/state/flowforge}
+        target: ${FLOWFORGE_STATE_PATH:-/home/pentagon-admin/.local/state/flowforge}
+        read_only: true
+        bind:
+          create_host_path: false
+      - ${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Documents/apps/mentory}:${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Documents/apps/mentory}:ro
+      # Directory binding follows atomic queue replacements. Hide the legacy credential file.
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}:${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}:ro
+      - /dev/null:${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/.env:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/pipeline_runner.py:/source/flowforge/pipeline_runner.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_config.py:/source/flowforge/flowforge_config.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_storage.py:/source/flowforge/flowforge_storage.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_status.py:/source/flowforge/flowforge_status.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_agents.py:/source/flowforge/flowforge_agents.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_sync.py:/source/flowforge/flowforge_sync.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_cli.py:/source/flowforge/flowforge_cli.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/watch-task.py:/source/flowforge/watch-task.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/steps.json:/source/flowforge/steps.json:ro
+      - ${OPENCODE_BINARY:-/home/pentagon-admin/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
+      - ${OPENCODE_BINARY:-/home/pentagon-admin/.opencode/bin/opencode}:${OPENCODE_BINARY:-/home/pentagon-admin/.opencode/bin/opencode}:ro
+      - ${KNOWLEDGE_ROUTER_PATH:-/home/pentagon-admin/Documents/apps/knowledge-router}:/home/pentagon-admin/Documents/apps/knowledge-router:ro
+      - ${CODING_VAULT_PATH:-/home/pentagon-admin/Documents/apps/obsidian-vaults/coding}:/home/pentagon-admin/Documents/apps/obsidian-vaults/coding:ro
+    # Internal network only; no Docker socket, model key, writable state or session DB.
+    networks: [upstream]
+    mem_limit: 256m
+    cpus: 1
   homelab-broker:
     build: ../pentagon-gateway
     restart: unless-stopped

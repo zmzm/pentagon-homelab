@@ -1,4 +1,4 @@
-"""Run inside Hermes: real MCP handshake, nine tools, policy discovery and read-only inspection."""
+"""Run inside Hermes: real MCP handshake, fifteen tools, policy discovery and read-only inspection."""
 import asyncio
 import json
 import sys
@@ -35,11 +35,16 @@ async def main():
         await send({'method': 'notifications/initialized'})
         await send({'id': 2, 'method': 'tools/list', 'params': {}})
         tools = (await receive(2))['tools']
-        expected = {'knowledge_search', 'flowforge_list_workflows', 'flowforge_list_tasks', 'flowforge_get_run', 'flowforge_run',
-                    'homelab_list_services', 'homelab_inspect_service', 'homelab_get_logs', 'homelab_restart_service'}
+        expected = {
+            'knowledge_search', 'flowforge_list_workflows', 'flowforge_list_tasks',
+            'flowforge_get_run', 'flowforge_run', 'flowforge_list_projects',
+            'flowforge_get_project', 'flowforge_get_catalog', 'flowforge_get_project_status',
+            'flowforge_doctor', 'flowforge_preview_sync', 'homelab_list_services',
+            'homelab_inspect_service', 'homelab_get_logs', 'homelab_restart_service',
+        }
         if {tool['name'] for tool in tools} != expected:
             raise RuntimeError('Unexpected MCP tool inventory')
-        print('PASS: MCP handshake and nine expected tools', flush=True)
+        print('PASS: MCP handshake and fifteen expected tools', flush=True)
         schema = next(tool['inputSchema'] for tool in tools if tool['name'] == 'flowforge_run')
         task = schema['properties']['input']
         if '$ref' in task:
@@ -80,6 +85,38 @@ async def main():
         if not payload.get('success'):
             raise RuntimeError('Gateway tool failed: ' + str(payload.get('error', 'UNKNOWN')))
         print('PASS: Vaultwarden inspection; status=' + str(payload['data'].get('status')), flush=True)
+        for request_id, (tool, extra) in enumerate((
+            ('flowforge_list_projects', {}),
+            ('flowforge_get_project', {'project': 'mentory'}),
+            ('flowforge_get_catalog', {'project': 'mentory'}),
+            ('flowforge_get_project_status', {'project': 'mentory'}),
+            ('flowforge_doctor', {'project': 'mentory'}),
+            ('flowforge_preview_sync', {'project': 'mentory'}),
+        ), 5):
+            await send({'id': request_id, 'method': 'tools/call', 'params': {
+                'name': tool, 'arguments': {**extra,
+                    'session_id': 'deployment-smoke-test',
+                    'user_request': 'Verify read-only FlowForge inspection without task execution',
+                },
+            }})
+            result = await receive(request_id)
+            if result.get('isError'):
+                raise RuntimeError('MCP inspection returned an error: ' + tool)
+            payload = json.loads(next(item['text'] for item in result['content'] if item['type'] == 'text'))
+            if not payload.get('success'):
+                raise RuntimeError('Gateway inspection failed: ' + tool + ': ' + str(payload.get('error', 'UNKNOWN')))
+            data = payload['data']
+            if tool == 'flowforge_list_projects':
+                assert any(p['project'] == 'mentory' and p['access'] == 'READ' for p in data['projects'])
+            else:
+                assert data['project'] == 'mentory' and data['execution_allowed'] is False
+            if tool == 'flowforge_get_project_status':
+                assert data['lock_observation'] == data['session_observation'] == 'unavailable'
+            if tool == 'flowforge_doctor':
+                assert isinstance(data['ok'], bool) and data['execution_verified'] is False
+            if tool == 'flowforge_preview_sync':
+                assert data['applicable'] is False and data['applied'] is False
+            print('PASS: ' + tool + ' read-only response contract', flush=True)
     finally:
         if process.returncode is None:
             process.terminate()
