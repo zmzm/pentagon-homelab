@@ -1,6 +1,7 @@
 # 🐳 Services
 
-List of services in the Pentagon homelab.
+Inventory of tracked service definitions in the Pentagon homelab. This is configured
+coverage, not a live health report; dated deployment evidence is linked separately.
 
 ---
 
@@ -19,7 +20,7 @@ List of services in the Pentagon homelab.
 | Service | Purpose | Domain | App Location | Data Location |
 |-------|-------|-------|-------|-------|
 | Pi-hole | DNS + ad blocker | `pihole.home.arpa` | `apps/pihole` | `data/pihole` |
-| Pi-hole Adapter | Homepage widget API adapter | internal | `apps/pihole-adapter` | none |
+| Pi-hole Adapter | Pi-hole summary API for Homepage and SmallTV | internal | `apps/pihole-adapter` | none |
 | Unbound | Recursive DNS resolver | internal | `apps/unbound` | none |
 | Cloudflared | Cloudflare tunnel | external tunnel | `apps/cloudflared` | `data/cloudflared` |
 
@@ -43,7 +44,7 @@ List of services in the Pentagon homelab.
 
 # Monitoring
 
-A host systemd timer, `homelab-monitor.timer`, runs `scripts/monitor.py` every five minutes. It checks disk space, twelve managed containers, Matrix/Vaultwarden HTTP health, and Backrest backup results/freshness. Matrix alerts are active in the private, unencrypted **Server alerts** room, alongside local journal logging. This service is managed outside Docker Compose. Send `!status` in **Server alerts** for a fresh health report; a separate lightweight timer checks for authorized requests every 15 seconds. Matrix PostgreSQL dumps run hourly and are checked for freshness. See [database backups](OPERATIONS.md#matrix-database-backups) and [monitoring setup](monitoring/README.md).
+A host systemd timer, `homelab-monitor.timer`, runs `scripts/monitor.py` every five minutes. It checks disk space, twelve managed containers, Matrix/Vaultwarden HTTP health, and Backrest backup results/freshness. Matrix alerts are active in the private, unencrypted **Server alerts** room, alongside local journal logging. This service is managed outside Docker Compose. Send `!status` in **Server alerts** for a fresh health report; a separate lightweight timer checks for authorized requests every 15 seconds. Matrix PostgreSQL dumps run hourly and are checked for freshness. Weekly isolated recovery verification is monitored too. The twelve configured container checks exclude the Hermes stack and SmallTV; independent external monitoring remains [deferred](monitoring/EXTERNAL_MONITORING.md). See [database backups](OPERATIONS.md#matrix-database-backups) and [monitoring setup](monitoring/README.md).
 
 ---
 
@@ -117,10 +118,12 @@ The home connection is behind CGNAT. Messaging continues through Cloudflare Tunn
 |----|----|
 | `80` | Caddy HTTP |
 | `443` | Caddy HTTPS |
+| `53` TCP/UDP | Pi-hole DNS on host networking |
 | `8081` | Pi-hole web UI on host |
 | `5335` | Unbound DNS on localhost |
 | `8008` | Matrix Synapse on localhost |
-| `9898` | Backrest inside Docker network |
+| `8096` | SmallTV JSON feed, bound to `${SMALLTV_BIND_IP:-192.168.0.185}` |
+| `9898` | Backrest inside Docker network; no host port |
 
 ---
 
@@ -131,15 +134,12 @@ Real `.env` files are ignored by Git. Tracked example files:
 | File | Variables |
 |-------|-------|
 | `apps/matrix/.env.example` | `MATRIX_POSTGRES_PASSWORD` |
+| `apps/pihole-adapter/.env.example` | `PIHOLE_BASE_URL`, `PIHOLE_PASSWORD`, `REQUEST_TIMEOUT`, `SUMMARY_CACHE_TTL` |
 | `apps/portainer/.env.example` | `PORTAINER_HOMEPAGE_WIDGET_KEY` |
 | `apps/hermes/.env.example` | Provider/Matrix settings and distinct gateway, approver, broker and FlowForge credentials; see the [Hermes configuration guide](apps/hermes/README.md#configuration-and-deployment) |
 
-Existing ignored local env files:
-
-- `apps/matrix/.env`
-- `apps/pihole-adapter/.env`
-- `apps/portainer/.env`
-- `apps/hermes/.env`
+Runtime `.env` files are local prerequisites; their presence and contents are not
+established by this inventory.
 
 ---
 
@@ -157,7 +157,7 @@ The eleven core Compose projects have Ansible deployment playbooks, including se
 
 # SmallTV JSON Dashboard
 
-`apps/smalltv-dashboard/compose.yaml` deploys the JSON feed on LAN port 8096.
+`apps/smalltv-dashboard/compose.yaml` defines the JSON feed on LAN port 8096.
 It provides weather, host and Pi-hole cards to the SmallTV-Ultra at `192.168.0.106`;
 its active feeds are `/clock.json` and `/dashboard.json` at `http://192.168.0.185:8096`. See the
 [app guide](apps/smalltv-dashboard/README.md) and
@@ -175,3 +175,7 @@ The dashboard also sends bounded red/yellow problem and green recovery overlays,
 with persistent deduplication, six-hour reminders and matching quiet hours.
 Notification readiness is exposed at `/notifications.json`; details and rebuild
 steps are in [the app guide](apps/smalltv-dashboard/README.md).
+
+Persistent notification state is stored in `data/smalltv-dashboard`. The host
+exporter publishes its allowlisted status file under `/var/lib/smalltv-dashboard`,
+mounted read-only by the container. This project has no Ansible deployment playbook.
