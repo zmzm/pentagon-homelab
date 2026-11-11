@@ -109,6 +109,7 @@ homelab/
 │   ├── pihole
 │   ├── pihole-adapter
 │   ├── portainer
+│   ├── smalltv-dashboard
 │   ├── unbound
 │   ├── vaultwarden
 │   └── watchtower
@@ -145,7 +146,7 @@ backrest.home.arpa             → backrest:9898
 caddy           → reverse proxy
 vaultwarden     → password manager
 pihole          → DNS and ad blocking
-pihole-adapter  → Homepage Pi-hole widget API adapter
+pihole-adapter  → Homepage Pi-hole summary API adapter
 unbound         → recursive DNS resolver
 portainer       → Docker management UI
 homepage        → service dashboard
@@ -160,7 +161,7 @@ watchtower      → automated container updates
 
 # Lightweight Monitoring
 
-The host timer `homelab-monitor.timer` runs a short-lived Python checker every five minutes. It reads Docker status, calls Matrix/Vaultwarden health endpoints, checks root disk space, and queries Backrest backup history over its private Docker address. State changes, recovery, and six-hour reminders are logged to journald and sent by the existing Matrix bot to a private, unencrypted **Server alerts** room. Failed deliveries persist in a queue and retry on subsequent runs. State persists under `/var/lib/homelab-monitor`. Send `!status` in **Server alerts** for a fresh health report; a separate lightweight timer checks for authorized requests every 15 seconds. Matrix PostgreSQL dumps run hourly and are checked for freshness. See [database backups](OPERATIONS.md#matrix-database-backups) and [monitoring setup](monitoring/README.md).
+The host timer `homelab-monitor.timer` runs a short-lived Python checker every five minutes. It reads Docker status, calls Matrix/Vaultwarden health endpoints, checks root disk space, and queries Backrest backup history over its private Docker address. State changes, recovery, and six-hour reminders are logged to journald and sent by the existing Matrix bot to a private, unencrypted **Server alerts** room. Failed deliveries persist in a queue and retry on subsequent runs. State persists under `/var/lib/homelab-monitor`. The twelve configured container checks cover the core stack, excluding Hermes and SmallTV. Weekly isolated recovery verification is checked separately; independent external monitoring remains deferred. Send `!status` in **Server alerts** for a fresh health report; a separate lightweight timer checks for authorized requests every 15 seconds. Matrix PostgreSQL dumps run hourly and are checked for freshness. See [database backups](OPERATIONS.md#matrix-database-backups) and [monitoring setup](monitoring/README.md).
 
 ---
 
@@ -174,27 +175,16 @@ The host timer `homelab-monitor.timer` runs a short-lived Python checker every f
 
 ---
 
-# Future Architecture
-
-Potential additions to the infrastructure:
-
-- Centralized logging
-- Off-device backup replication
-- Git remote and deployment workflow
-
----
-
 # SmallTV Desk Display
 
-SmallTV-Ultra at `192.168.0.106` runs custom smalltv-mod 3.1.0-homelab.1 and polls the
-`smalltv-dashboard` JSON service at `192.168.0.185:8096` every ten seconds.
-The Compose service in `apps/smalltv-dashboard` uses the shared `proxy` network
-for the existing Pi-hole adapter and read-only host metrics. Weather, host
-metrics and Pi-hole use their original layouts alongside a separate clock/weather screen. Rendering
-happens on the device from JSON; no dashboard screenshots are generated.
-See [deployment and verification](apps/smalltv-dashboard/DEPLOYMENT.md).
+The SmallTV-Ultra at `192.168.0.106` polls the JSON service at
+`192.168.0.185:8096`. The Compose service uses the shared `proxy` network to
+query the Pi-hole adapter and read-only host mounts for metrics. Rendering
+happens on the device from JSON. Persistent notification state lives under
+`data/smalltv-dashboard`; the host exporter writes an allowlisted monitoring
+summary under `/var/lib/smalltv-dashboard`, mounted read-only by the service.
 
-The SmallTV now uses a custom `esp8266-dashboard` firmware and the
+The documented device setup uses a custom `esp8266-dashboard` firmware and the
 `homelab-five-screens` theme. Its `/clock.json` and `/dashboard.json` feeds
 rotate Bialystok clock/weather (40 seconds), then host, Pi-hole, services and
 backups (20 seconds each). The original layouts and 24-pixel weather date

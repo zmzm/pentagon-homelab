@@ -4,99 +4,23 @@ Operational commands and troubleshooting guide for the Pentagon homelab.
 
 ---
 
-# Docker Basics
+# Service inspection and deployment
 
-## List running containers
+Run from the repository root for an initial read-only inspection:
 
-docker ps
-
-Show all containers (including stopped):
-
+```bash
 docker ps -a
+docker stats --no-stream
+systemctl --failed
+sudo journalctl -u homelab-monitor.service --since today
+```
 
----
-
-## View container logs
-
-Show logs:
-
-docker logs CONTAINER_NAME
-
-Follow logs live:
-
-docker logs -f CONTAINER_NAME
-
-Show last 100 lines:
-
-docker logs --tail 100 CONTAINER_NAME
-
-Example:
-
-docker logs -f pihole
-
----
-
-## Restart container
-
-docker restart CONTAINER_NAME
-
-Example:
-
-docker restart pihole
-
----
-
-## Stop container
-
-docker stop CONTAINER_NAME
-
----
-
-## Start container
-
-docker start CONTAINER_NAME
-
----
-
-# Docker Compose
-
-All application compose files live in:
-
-~/Documents/homelab/apps/
-
-Example:
-
-cd ~/Documents/homelab/apps/pihole
-
----
-
-## Start services
-
-docker compose up -d
-
----
-
-## Stop services
-
-docker compose down
-
----
-
-## Restart services
-
-docker compose restart
-
----
-
-## Pull latest images
-
-docker compose pull
-
----
-
-## Recreate containers
-
-docker compose up -d --force-recreate
+For a specific container, use `docker logs --tail 100 CONTAINER_NAME`.
+Core deployments and recovery prerequisites are documented in
+[Ansible](ansible/README.md). The agent stack uses the
+[Hermes deployment procedure](apps/hermes/README.md#configuration-and-deployment);
+SmallTV uses its [app guide](apps/smalltv-dashboard/README.md#deployment).
+Service restarts and updates require task authorization and component checks.
 
 ---
 
@@ -119,7 +43,7 @@ docker compose exec -T hermes python - < ../../scripts/verify_hermes_tool_regist
 docker compose exec -T hermes python - < ../../scripts/verify_hermes_mcp.py
 ```
 
-The first check verifies nine personal MCP tools for CLI, Matrix and cron plus
+The first check verifies the configured personal MCP tools for CLI, Matrix and cron plus
 the curated diagnosis skill. The second reads policy coverage and performs the
 existing Vaultwarden inspection; it does not request a restart or approval.
 See [API, authentication and targeted rollout steps](apps/hermes/README.md#service-discovery-and-rollout)
@@ -131,7 +55,7 @@ send standalone `!new`, choose **Approve Once** if prompted, and wait for its
 confirmation. The operator must not confirm or send user events on the user's
 behalf. This native session reset is separate from gateway restart approvals.
 
-After documentation changes are committed, refresh and check the allowlisted
+When an index refresh is explicitly authorized, refresh and check the allowlisted
 homelab knowledge snapshot using [the documented host commands](apps/hermes/README.md#homelab-documentation).
 Documentation-only refreshes need no service restart. Keep service policies,
 credentials, monitoring and existing production schedules unchanged.
@@ -163,50 +87,31 @@ Documentation snapshot refreshes do not require restarting other services.
 
 # Ansible
 
-Ansible is used as the migration path toward repeatable host setup and service deployment.
+The local inventory targets `pentagon`; `site.yml` is read-only preflight.
+`prepare.yml` installs prerequisites and creates missing directories/networks.
+All eleven core Compose projects have dedicated deployment playbooks.
+Managed configuration, encrypted Vault inputs and a separate SSH inventory for
+replacement hosts are described in the [Ansible guide](ansible/README.md),
+[managed configuration guide](ansible/MANAGED_CONFIGURATION.md) and
+[remote provisioning guide](ansible/REMOTE_PROVISIONING.md).
 
-Current first step:
-
-- Local inventory for the `pentagon` host
-- Shared homelab paths and Compose app list
-- Preflight playbook that verifies the repository path
-
-Run the preflight:
-
-sudo apt install ansible
-
-cd ~/Documents/homelab/ansible
-ansible-playbook site.yml
-
-The playbook is intentionally read-only at this stage.
-
-The first-step inventory uses `ansible_connection=local` because the playbook is currently run on the homelab host itself. Use a separate SSH inventory later when provisioning a different machine.
+Run from `ansible/` so the repository configuration is loaded. Follow the
+component prerequisites before deploying; a successful preflight does not restore data.
 
 ---
 
 # Secrets
 
-Real environment files are local only and ignored by Git.
+Runtime environment files are local and ignored by Git. Tracked examples are:
 
-Current local secret files:
+- `apps/matrix/.env.example`
+- `apps/pihole-adapter/.env.example`
+- `apps/portainer/.env.example`
+- `apps/hermes/.env.example`
 
-apps/matrix/.env
-apps/pihole-adapter/.env
-apps/portainer/.env
-apps/hermes/.env
-
-Tracked example files document required variables:
-
-apps/matrix/.env.example
-apps/portainer/.env.example
-apps/hermes/.env.example
-
-When starting a service, run Docker Compose from that service directory so the local `.env` file is loaded automatically.
-
-Example:
-
-cd ~/Documents/homelab/apps/matrix
-docker compose up -d
+Private Ansible Vault files and restored runtime configuration are also required
+for applicable services; see [managed configuration](ansible/MANAGED_CONFIGURATION.md).
+Run Compose from the service directory so its local `.env` is loaded.
 
 ---
 
@@ -378,232 +283,32 @@ The initial repository creation uses `--initialize`; it is unnecessary for norma
 
 ---
 
-# Git
+# Read-only troubleshooting
 
-The repository tracks service definitions, static configs, documentation, and incident notes.
-
-Ignored local/runtime paths include:
-
-data/
-backups/
-apps/*/.env
-.agents/
-.codex/
-cloudflared-linux-arm
-
-Check what would be committed:
-
-git status --short
-
-Check ignored files:
-
-git status --short --ignored
-
----
-
-# Inspect Docker
-
-## Container details
-
-docker inspect CONTAINER_NAME
-
----
-
-## Show container resource usage
-
-docker stats
-
----
-
-## Show container networks
-
+```bash
+# Container, network and disk status
 docker network ls
-
-Inspect network:
-
-docker network inspect NETWORK_NAME
-
----
-
-# Disk Usage
-
-## Docker disk usage
-
 docker system df
-
----
-
-## Clean unused images
-
-docker image prune
-
----
-
-## Clean everything unused
-
-docker system prune
-
----
-
-# Log Investigation
-
-## Show system logs
-
-journalctl -xe
-
----
-
-## Follow system logs
-
-journalctl -f
-
----
-
-## Show service logs
-
-journalctl -u SERVICE_NAME
-
-Example:
-
-journalctl -u docker
-
----
-
-# DNS Troubleshooting
-
-Used during DNS loop incident.
-
----
-
-## Test DNS resolution
-
-dig google.com
-
----
-
-## Query specific DNS server
-
-dig google.com @127.0.0.1 -p 5335
-
----
-
-## Check Pi-hole DNS
-
-dig google.com @PIHOLE_IP
-
----
-
-## Test domain resolution
-
-dig vault.home.arpa
-
----
-
-## Trace DNS resolution
-
-dig +trace google.com
-
----
-
-# Network Diagnostics
-
-## Check open ports
-
+df -h
 ss -tulnp
 
----
+# DNS through the local recursive resolver
+dig example.com @127.0.0.1 -p 5335
+dig vault.home.arpa
 
-## Show listening services
+# Host logs
+journalctl -u docker --since today
+```
 
-netstat -tulnp
-
----
-
-## Test connection
-
-curl http://vault.home.arpa
-
----
-
-## Check HTTP headers
-
-curl -I http://vault.home.arpa
-
----
-
-# File System Navigation
-
-## List files
-
-ls
-
-Detailed list:
-
-ls -lah
-
----
-
-## Show directory tree
-
-tree
-
-Limit depth:
-
-tree -L 3
-
----
-
-# File Search
-
-## Find files by name
-
-find . -name "docker-compose.yml"
-
----
-
-## Find directories
-
-find . -type d -name "data"
-
----
-
-# Text Search
-
-## Search inside files
-
-grep "vault.home.arpa" -R .
-
----
-
-## Case insensitive search
-
-grep -i "error" -R .
-
----
-
-## Search logs for errors
-
-grep -i error logfile.log
-
----
-
-# Process Monitoring
-
-## Show running processes
-
-ps aux
-
----
-
-## Filter processes
-
-ps aux | grep docker
+For TLS endpoint checks, use the restored Caddy CA as described in the component's
+Ansible guide. A running container alone does not prove application recovery or
+external reachability. Record incidents with [the incident template](INCIDENT_TEMPLATE.md).
 
 ---
 
 # System Monitoring
 
-Automated checks run every five minutes through `homelab-monitor.timer`. Disk warnings start at 85% used; critical alerts start at 95% used or less than 2 GiB free. Failed/warning backups and successful backups older than 36 hours are reported alongside container and Matrix/Vaultwarden health problems. Alerts appear in local journal and the private, unencrypted Matrix room **Server alerts**. The bot `@homelab:pentagonlab.org` invited `@vladjik:pentagonlab.org`; accept the invitation to receive them. Failed deliveries retry on subsequent checks.
+Automated checks run every five minutes through `homelab-monitor.timer`. Disk warnings start at 85% used; critical alerts start at 95% used or less than 2 GiB free. Failed/warning backups and successful backups older than 36 hours are reported alongside container and Matrix/Vaultwarden health problems. Alerts appear in local journal and the private, unencrypted Matrix room **Server alerts**. The bot uses `@homelab:pentagonlab.org`; room and authorized-user settings are documented in the monitoring guide. Failed deliveries retry on subsequent checks.
 
 ```bash
 sudo journalctl -u homelab-monitor.service --since today
@@ -612,77 +317,6 @@ sudo python3 -B scripts/monitor.py --check
 ```
 
 Send `!status` in **Server alerts** for a fresh health report; a separate lightweight timer checks for authorized requests every 15 seconds. See [monitoring setup](monitoring/README.md) for configuration, installation, and coverage limits. Use `btop` and `df -h` for manual resource checks.
-
-## CPU / Memory
-
-top
-
-Better alternative:
-
-btop
-
----
-
-## Disk usage
-
-df -h
-
----
-
-## Directory size
-
-du -sh *
-
----
-
-# Incident Investigation Workflow
-
-Basic steps when something breaks:
-
-1. Check containers
-
-docker ps
-
-2. Check logs
-
-docker logs CONTAINER_NAME
-
-3. Check DNS
-
-dig google.com
-
-4. Check reverse proxy
-
-curl http://SERVICE_DOMAIN
-
-5. Check ports
-
-ss -tulnp
-
-6. Check system logs
-
-journalctl -xe
-
----
-
-# Useful Paths
-
-Homelab root:
-
-~/Documents/homelab
-
-Apps:
-
-~/Documents/homelab/apps
-
-Data:
-
-~/Documents/homelab/data
-
-Incidents:
-
-~/Documents/homelab/incidents
-
 
 # Ansible Host Preparation
 
@@ -698,7 +332,7 @@ ansible-playbook prepare.yml
 `site.yml` is read-only. `prepare.yml` uses sudo to install missing prerequisites, ensure Docker is running/enabled, and create missing directories/networks. It preserves existing directory permissions and network connections. It does not run Compose deployments or render secrets. See [Ansible usage and rebuild prerequisites](ansible/README.md).
 
 
-## Deploy Homepage with Ansible
+## Core service deployment with Ansible
 
 From `ansible/`:
 
@@ -708,3 +342,7 @@ ansible-playbook homepage.yml
 ```
 
 This deploys only the Homepage Compose project and verifies `https://dashboard.home.arpa` through DNS/Caddy with trusted local TLS. It requires restored Homepage configuration and the existing Caddy CA/network. Installed images are reused; changed configuration can recreate the container. See [Homepage deployment prerequisites](ansible/README.md#homepage-deployment).
+
+Equivalent dedicated playbooks exist for all eleven core Compose projects; see
+[component prerequisites and checks](ansible/README.md). Hermes and SmallTV retain
+their separate deployment procedures linked above.

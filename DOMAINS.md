@@ -57,6 +57,8 @@ Some services also expose host-local ports:
 
 | Service | Port | Notes |
 |------|------|------|
+| Pi-hole DNS | `53` TCP/UDP | Host network DNS listener |
+| SmallTV JSON dashboard | `192.168.0.185:8096` by default | LAN binding configurable with `SMALLTV_BIND_IP`; no Caddy route |
 | Pi-hole | `8081` | Host network mode |
 | Unbound | `127.0.0.1:5335` | Recursive DNS |
 | Matrix Synapse | `127.0.0.1:8008` | Local homeserver listener |
@@ -73,18 +75,6 @@ Pi-hole
 Unbound
   ↓
 Internet root DNS servers
-```
-
----
-
-# Future Domains
-
-Potential future services may include:
-
-```text
-ai.home.arpa
-logs.home.arpa
-git.home.arpa
 ```
 
 ---
