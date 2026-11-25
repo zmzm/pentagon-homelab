@@ -210,8 +210,8 @@ def main():
     live = parser.parse_args().live
     name = 'hermes-skills-validation-' + uuid.uuid4().hex[:10]
     record = {'utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              'coverage': ('CLI behavioral; CLI/Matrix/cron effective schemas; no Matrix message sent'
-                           if live else 'Offline CLI/Matrix/cron effective schemas and native skill loading; no model request')}
+              'coverage': ('CLI behavioral; CLI/Matrix/Telegram/cron effective schemas; no Matrix message sent'
+                           if live else 'Offline CLI/Matrix/Telegram/cron effective schemas, Telegram intake and native skill loading; no model request')}
     before_states = states()
     before_data = json.loads(python(SOURCE, SNAPSHOT))
     source = json.loads(docker('inspect', SOURCE))[0]
@@ -222,6 +222,10 @@ def main():
         with tempfile.TemporaryDirectory(prefix='hermes-skills-validation-') as scratch:
             scratch = Path(scratch)
             bridge = (ROOT / 'apps/hermes/gateway_mcp.py').read_text()
+            if not live:
+                # MCP filters the parent's environment, including PYTHONPYCACHEPREFIX.
+                # Use the same disposable cache in this instrumented offline child.
+                bridge = 'import sys\nsys.pycache_prefix = "/opt/data/validation-pycache"\n' + bridge
             guard_marker = 'if __name__ == "__main__":'
             assert bridge.count(guard_marker) == 1
             guarded_bridge = scratch / 'gateway_mcp.py'
@@ -242,12 +246,16 @@ def main():
                 ROOT / 'apps/hermes/skills': '/opt/hermes-curated-skills',
                 ROOT / 'apps/hermes/plugins/homelab-skill-tools': '/opt/data/plugins/homelab-skill-tools',
                 guarded_bridge: '/integration/gateway_mcp.py',
+                ROOT / 'scripts/verify_hermes_telegram.py': '/integration/verify_hermes_telegram.py',
             }
             command = ['run', '-d', '--name', name, '--network', 'agent-network' if live else 'none',
                        '--entrypoint', PYTHON, '--tmpfs',
                        '/opt/data:uid=10000,gid=10000,mode=0700,size=256m',
                        '--env-file', str(envfile), '-e', 'HOME=/opt/data',
                        '--security-opt', 'no-new-privileges:true', '--cap-drop', 'ALL']
+            if not live:
+                # Ignore stale/broken image bytecode without changing the image.
+                command += ['-e', 'PYTHONPYCACHEPREFIX=/opt/data/validation-pycache']
             for host, destination in mounts.items():
                 command += ['-v', f'{host}:{destination}:ro']
             command += [source['Image'], '-c', 'import time; time.sleep(3600)']
@@ -271,9 +279,16 @@ print('PASS: isolated home passes native CLI ownership/permissions checks as obs
 """)
             print(record['isolated_home_preflight'], flush=True)
             registration = (ROOT / 'scripts/verify_hermes_tool_registration.py').read_text()
-            record['registration'] = docker('exec', '-i', '--user', '10000:10000', name,
+            # Availability is cached on import: set the chat-session marker before
+            # starting Python, so Telegram's cron exclusion cannot be a false pass.
+            record['registration'] = docker('exec', '-i', '--user', '10000:10000',
+                                            '-e', 'HERMES_GATEWAY_SESSION=1', name,
                                             PYTHON, '-', input=registration, offline_diagnostic=not live)
             print(record['registration'], flush=True)
+            if not live:
+                record['telegram'] = docker('exec', '--user', '10000:10000', name,
+                    PYTHON, '/integration/verify_hermes_telegram.py', offline_diagnostic=True)
+                print('PASS: offline native Telegram configuration, intake and slash access tests', flush=True)
             record['http_guard_check'] = docker('exec', '-i', '--user', '10000:10000', name,
                 PYTHON, '-', input=GUARD_CHECK, offline_diagnostic=not live)
             print(record['http_guard_check'], flush=True)

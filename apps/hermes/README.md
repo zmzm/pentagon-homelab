@@ -10,6 +10,7 @@ monitoring and existing application services remain independent.
 | Capability | Implementation and verification |
 | --- | --- |
 | Matrix + GLM | Running; a real authorized Matrix request inspected Vaultwarden, read logs and returned an answer |
+| Telegram | TG-02 configuration and offline installed-image checks prepared; deployment and live acceptance pending. Matrix remains the approval/delivery channel. |
 | Personal MCP tools | Fifteen tools deployed and verified through native CLI/Matrix/cron selection, including six read-only FlowForge tools; see inspection acceptance below. |
 | Service discovery | Deployed 2026-10-22: policy-backed configured tool coverage, with identifiers and informational restart levels; no Docker query or runtime health claim |
 | Permissions | READ/AUTO_SAFE/CONFIRM/DENY; exact-action, durable single-use approvals; no model approver credential |
@@ -43,6 +44,11 @@ Native file, terminal, code execution, browser, delegation and debugging tools a
 Matrix/CLI/cron selections explicitly choose the personal MCP tools and selected native
 memory/scheduling tools plus native skill discovery/loading. Verify effective selections
 when upgrading Hermes.
+
+Telegram adds only a dedicated bot credential and an outbound long-polling adapter.
+Its model toolsets are `memory`, `session_search`, `clarify`, `mcp-personal` and
+`homelab-skills-read`; the fifteen MCP tools and gateway approval policy are unchanged.
+Telegram cannot manage cron jobs through model tools or native slash commands.
 
 Only the broker mounts Docker's socket. A `:ro` socket mount **does not prevent Docker API
 writes**: the authenticated narrow handler and network isolation are the protection. This
@@ -88,6 +94,112 @@ MCP SDK 2.x uses `MCPServer`; the bridge also supports v1's `FastMCP`. Hermes fi
 child-process environment: `mcp_servers.personal.env` explicitly forwards only the gateway
 token and URL using native interpolation. A direct bridge test alone misses this boundary.
 Core configuration, identity and bridge files are read-only mounts.
+
+## Telegram alongside Matrix (TG-02)
+
+This is a prepared configuration, not a deployment. The native adapter and exact
+keys were checked on 2026-11-25 against the installed image ID
+`sha256:2f305c9bdc81731f48664586d23cb6a6f838a15ad7be1bfabe0c3c269d8e09b9`.
+`plugins/platforms/telegram/gateway_env.py` maps `TELEGRAM_BOT_TOKEN` to adapter
+enablement; `adapter.py` selects polling when `TELEGRAM_WEBHOOK_URL` is empty.
+No inbound port or webhook secret is needed. Keep the current image pinned;
+this task does not authorize an upgrade.
+
+Put `TELEGRAM_BOT_TOKEN` and a nonempty `TELEGRAM_ALLOWED_USERS` in the existing
+private `apps/hermes/.env` through the normal secret-handling workflow. The user
+list must contain only comma-separated positive numeric Telegram **user** IDs;
+no usernames, wildcards, negative group IDs or whitespace-only entries. Do not
+paste tokens into chat, Trello, Git or command arguments. Compose rejects missing
+or empty values, but does not validate numeric syntax. Keep the bot separate from
+notification bots and preserve all existing Matrix credentials and settings.
+
+The installed runtime uses `telegram.unauthorized_dm_behavior: ignore` to avoid
+minting pairing requests for unknown DMs. `telegram.group_allow_from: []` is an
+explicit empty sender set at native message intake, including groups, forums and
+channel posts. An empty group-chat allowlist by itself would not deny a platform-
+allowlisted user's group messages. Guest mode, group observation, bot access,
+global user grants and both open-access flags are explicitly disabled in Compose.
+No Telegram home channel is introduced, so schedules and approvals stay on Matrix.
+
+Native slash commands have a separate permission path from model tools. The
+nonempty `allow_admin_from: ["-1"]` activates native slash gating with an ID that
+cannot be a positive Telegram user ID; **an empty admin list disables gating in
+this image**. Only `help`, `whoami`, `new`, `reset`, `stop` and `status` are allowed.
+Group command administration is similarly gated. This preserves native skill reads
+through the model while excluding command-based configuration, update, toolset
+changes and cron management.
+
+Before deployment, recheck both `data/hermes/pairing` and
+`data/hermes/platforms/pairing` for `telegram-approved.json` and
+`telegram-pending.json`, plus native `.env`, legacy `gateway.json` and secondary
+profiles for alternate Telegram/global grants. **Existing approved pairing records
+are a union with the user allowlist**, including callback authorization. Ignore
+mode prevents new unauthorized pairing requests; it does not revoke approvals.
+If records or unexpected grants exist, stop rollout and review them with the
+operator; do not delete or migrate native state automatically. No native pairing
+approval is part of this setup. Repeat the check immediately before rollout.
+
+The 2026-11-25 read-only inspection found zero Telegram approved/pending records
+in both layouts, no Telegram/global authorization keys in the native `.env`, no
+legacy `gateway.json`, no secondary profiles and no Telegram token in the running
+process. The operator confirmed BotFather group joining disabled, inline mode
+disabled, group privacy enabled and owning-account two-step verification enabled.
+These are dated observations and operator attestations, not live Telegram API
+acceptance. See the [TG-02 verification report](../../reports/2026-11-25-hermes-telegram-tg02.md).
+
+Validate locally from the repository root:
+
+```bash
+python3 -m unittest discover -s scripts -p 'test_hermes_telegram_config.py'
+python3 -m unittest discover -s scripts -p 'test_verify_hermes_skills.py'
+python3 scripts/verify_hermes_skills.py
+```
+
+The last command uses a disposable container with no network, fixture credentials,
+an isolated home and read-only proposed config/plugin/bridge mounts. It checks
+CLI/Matrix/Telegram/cron effective schemas and six native Telegram cases without
+starting an adapter or making model/Telegram requests. Private detailed evidence
+is written to ignored `reports/hermes-skills-static-evidence.json`. The installed
+image's cached Python bytecode failed with `bad marshal data`; offline validation
+uses a fresh disposable bytecode cache in both verifier and instrumented MCP child.
+That workaround is confined to tests. Resolve or separately verify this restart
+risk before rollout; the checks do not prove the unmodified image will restart
+successfully with its existing caches.
+
+For TG-04, after TG-03 review and explicit deployment approval:
+
+1. Record the accepted image ID and pre-TG-02 Git revision. Preserve the current
+   private environment and native state. Check active conversations, cron work,
+   pending approvals, relay delivery claims and planning runs; let work finish or
+   record a recovery plan before interrupting Hermes.
+2. Verify numeric IDs, pairing/alternate grants and BotFather/account settings;
+   inject credentials privately. From `apps/hermes`, run
+   `docker compose config --quiet` without printing expanded secrets.
+3. Recreate **only** Hermes with
+   `docker compose up -d --no-deps --force-recreate hermes`. No pull/build/upgrade,
+   gateway, broker or approval-relay restart is required.
+4. Check native registration, authorized/unauthorized Telegram DMs and group
+   rejection, safe slash commands, Matrix conversation and Matrix approval
+   routing in fresh operator-controlled sessions. A live model call or approval
+   event needs its own authorized acceptance scope. Do not test a real restart
+   tool or paid workflow merely to check chat. Review bounded private logs for
+   credential leakage; polling readiness does not prove application acceptance.
+
+For rollback, after approval to interrupt Hermes, restore the pre-TG-02 versions
+of `docker-compose.yml`, `config.yaml` and the verification scripts, validate
+Compose, then recreate only Hermes using the **same existing image**. Keep
+`data/hermes` and all current gateway/relay/FlowForge state and claims; do not
+restore stale snapshots or reset sessions. The restored Compose stops forwarding
+the Telegram credential; retain or remove its private `.env` entries according to
+operator secret policy. Verify Matrix conversation, registration and approval
+routing. Never use `down -v` or start a second poller with the same bot token.
+
+Compatibility: the native Hermes gateway consumes the new env/config keys; only
+Telegram's selection is added. Matrix/CLI/cron toolsets, the MCP bridge's fifteen
+schemas, gateway/broker contracts, relay credentials and persisted approval/run/
+delivery formats are unchanged. Native Telegram sessions and update receipts,
+once deployed, stay in the existing Hermes home and are retained on rollback;
+the old Matrix configuration leaves them unused. There is no state migration.
 
 ## Pentagon Gateway rename
 

@@ -15,6 +15,17 @@ services:
       MATRIX_REQUIRE_MENTION: "true"
       MATRIX_AUTO_THREAD: "true"
       MATRIX_ENCRYPTION: "false"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set dedicated Hermes Telegram bot token}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:?set comma-separated numeric Telegram user IDs}
+      TELEGRAM_ALLOW_ALL_USERS: "false"
+      TELEGRAM_ALLOW_BOTS: "none"
+      TELEGRAM_GROUP_ALLOWED_USERS: ""
+      TELEGRAM_GROUP_ALLOWED_CHATS: ""
+      TELEGRAM_GUEST_MODE: "false"
+      TELEGRAM_OBSERVE_UNMENTIONED_GROUP_MESSAGES: "false"
+      TELEGRAM_WEBHOOK_URL: ""
+      GATEWAY_ALLOWED_USERS: ""
+      GATEWAY_ALLOW_ALL_USERS: "false"
       HERMES_TIMEZONE: Europe/Warsaw
       GATEWAY_URL: http://pentagon-gateway:8080
       GATEWAY_TOKEN: ${GATEWAY_TOKEN:?set random 32+ character token}
