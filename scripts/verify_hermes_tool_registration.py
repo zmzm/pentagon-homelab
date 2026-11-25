@@ -31,7 +31,7 @@ def verify_selection(config, personal, platform):
     required = personal | {'skills_list', 'skill_view', 'memory', 'session_search'}
     # A plain verifier process lacks the interactive/gateway/cron session
     # markers. Respect the native availability check for this existing tool.
-    if check_cronjob_requirements():
+    if platform in ('cli', 'matrix') and check_cronjob_requirements():
         required.add('cronjob_manage')
     if platform != 'cron':
         required.add('clarify')
@@ -40,6 +40,8 @@ def verify_selection(config, personal, platform):
                            f'missing={sorted(required - selected)}, extra={sorted(selected - required)}')
     prohibited = {'skill_manage', 'terminal', 'process_manage', 'read_file',
                   'write_file', 'patch', 'search_files', 'execute_code', 'delegate_task'}
+    if platform == 'telegram':
+        prohibited.add('cronjob_manage')
     for group in ('terminal', 'file', 'code_execution', 'delegation', 'browser', 'debugging'):
         prohibited.update(resolve_toolset(group))
     if (selected | offered) & prohibited:
@@ -92,7 +94,7 @@ def main():
         if raw_names != expected:
             raise RuntimeError('Unexpected personal MCP inventory')
         print('PASS: Hermes registered all fifteen personal MCP tools through its filtered subprocess environment')
-        for platform in ('cli', 'matrix', 'cron'):
+        for platform in ('cli', 'matrix', 'telegram', 'cron'):
             verify_selection(config, personal, platform)
         assert config['skills']['inline_shell'] is False
         assert config['security']['allow_lazy_installs'] is False

@@ -26,7 +26,21 @@ agent:
 platform_toolsets:
   cli: [memory, session_search, clarify, cronjob, mcp-personal, homelab-skills-read]
   matrix: [memory, session_search, clarify, cronjob, mcp-personal, homelab-skills-read]
+  telegram: [memory, session_search, clarify, mcp-personal, homelab-skills-read]
   cron: [memory, session_search, mcp-personal, homelab-skills-read]
+# Credentials enable the installed native adapter; no webhook listener is used.
+telegram:
+  unauthorized_dm_behavior: ignore
+  # An explicitly empty sender set rejects groups/forums/channels at intake.
+  group_allow_from: []
+  # Native slash commands bypass model tool selection. A reserved non-user ID
+  # activates native command gating without granting any Telegram user admin.
+  allow_admin_from: ["-1"]
+  user_allowed_commands: [help, whoami, new, reset, stop, status]
+  group_allow_admin_from: ["-1"]
+  group_user_allowed_commands: []
+  guest_mode: false
+  observe_unmentioned_group_messages: false
 # Native group "skills" also exposes skill_manage. This local plugin defines
 # a narrower group using the installed runtime's existing native read tools.
 plugins:
