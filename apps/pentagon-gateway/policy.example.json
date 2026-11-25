@@ -1,14 +1,18 @@
 {
   "services": {
-    "vaultwarden": {"container": "vaultwarden", "restart": "CONFIRM"},
-    "caddy": {"container": "caddy", "restart": "CONFIRM"},
-    "synapse": {"container": "matrix-synapse", "restart": "CONFIRM"},
-    "pihole": {"container": "pihole", "restart": "CONFIRM"},
-    "homepage": {"container": "homepage", "restart": "DENY"},
-    "portainer": {"container": "portainer", "restart": "CONFIRM"},
-    "backrest": {"container": "backrest", "restart": "CONFIRM"}
+    "vaultwarden": { "container": "vaultwarden", "restart": "CONFIRM" },
+    "caddy": { "container": "caddy", "restart": "CONFIRM" },
+    "synapse": { "container": "matrix-synapse", "restart": "CONFIRM" },
+    "pihole": { "container": "pihole", "restart": "CONFIRM" },
+    "homepage": { "container": "homepage", "restart": "DENY" },
+    "portainer": { "container": "portainer", "restart": "CONFIRM" },
+    "backrest": { "container": "backrest", "restart": "CONFIRM" }
   },
-  "workflows": {"task-analysis": {"permission": "CONFIRM"}},
+  "workflows": { "task-analysis": { "permission": "CONFIRM" } },
   "flowforgeReadProjects": ["mentory"],
-  "projects": {"mentory": "/vaults/mentory", "default": "/vaults/coding", "homelab": "/vaults/homelab"}
+  "projects": {
+    "mentory": "/vaults/mentory",
+    "default": "/vaults/coding",
+    "homelab": "/vaults/homelab"
+  }
 }
