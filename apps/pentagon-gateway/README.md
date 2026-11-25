@@ -27,6 +27,9 @@ and Unix sockets and temporary files; real retrieval cases also need the externa
 Knowledge Router checkout and report skips when it is unavailable. These checks
 do not exercise deployed services.
 
+The Pentagon Gateway GitHub Actions workflow runs `npm ci` and `npm run check`
+for pushes and pull requests that change this app or its workflow file.
+
 The app's conventions are:
 
 - Keep ESM `.mjs` modules, explicit relative import extensions, `node:` imports for
