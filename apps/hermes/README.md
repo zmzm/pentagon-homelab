@@ -1,7 +1,7 @@
 # Hermes personal runtime PoC
 
-Hermes owns Matrix conversation, sessions, lightweight memory and new conversational
-schedules. The gateway owns the stable tool API, permission policy and audit. Knowledge
+Hermes owns Matrix and Telegram conversation, sessions, lightweight memory and new
+conversational schedules. The gateway owns the stable tool API, permission policy and audit. Knowledge
 Router owns retrieval; FlowForge owns planning/workflows. Production FlowForge timers,
 monitoring and existing application services remain independent.
 
@@ -10,8 +10,8 @@ monitoring and existing application services remain independent.
 | Capability | Implementation and verification |
 | --- | --- |
 | Matrix + GLM | Running; a real authorized Matrix request inspected Vaultwarden, read logs and returned an answer |
-| Telegram | TG-02 configuration and offline installed-image checks prepared; deployment and live acceptance pending. Matrix remains the approval/delivery channel. |
-| Personal MCP tools | Fifteen tools deployed and verified through native CLI/Matrix/cron selection, including six read-only FlowForge tools; see inspection acceptance below. |
+| Telegram | Deployed alongside Matrix on 2026-11-25; polling, outbound delivery and deployed authorization checks passed. Live conversation/negative-case acceptance remains pending; see [TG-04 evidence](../../reports/2026-11-25-hermes-telegram-tg04.md). Matrix remains the approval/delivery channel. |
+| Personal MCP tools | Fifteen tools registered through native CLI/Matrix/Telegram/cron selection. Gateway discovery and Vaultwarden inspection passed on 2026-11-25; FlowForge project inspection currently fails upstream. See [TG-04 evidence](../../reports/2026-11-25-hermes-telegram-tg04.md) and historical inspection acceptance below. |
 | Service discovery | Deployed 2026-10-22: policy-backed configured tool coverage, with identifiers and informational restart levels; no Docker query or runtime health claim |
 | Permissions | READ/AUTO_SAFE/CONFIRM/DENY; exact-action, durable single-use approvals; no model approver credential |
 | Matrix approvals | Separate trusted listener posts exact actions and accepts commands or seeded reactions only from allowed Matrix users in the configured room; security tests pass |
@@ -98,8 +98,9 @@ Core configuration, identity and bridge files are read-only mounts.
 
 ## Telegram alongside Matrix (TG-02)
 
-This is a prepared configuration, not a deployment. The native adapter and exact
-keys were checked on 2026-11-25 against the installed image ID
+TG-02 prepared this configuration; [TG-04 deployed it alongside Matrix](../../reports/2026-11-25-hermes-telegram-tg04.md)
+on 2026-11-25 after operator approval. Full live acceptance remains pending.
+The native adapter and exact keys were checked against the installed image ID
 `sha256:2f305c9bdc81731f48664586d23cb6a6f838a15ad7be1bfabe0c3c269d8e09b9`.
 `plugins/platforms/telegram/gateway_env.py` maps `TELEGRAM_BOT_TOKEN` to adapter
 enablement; `adapter.py` selects polling when `TELEGRAM_WEBHOOK_URL` is empty.
