@@ -40,7 +40,7 @@ Use a new notification bot, separate from Hermes. The sender calls only HTTPS
 `sendMessage` at `api.telegram.org`, with no inbound listener, webhook, polling,
 model invocation or tool/approval access. One positive numeric private-chat ID
 is allowed; usernames, groups, channels and migration responses cannot retarget
-delivery. HTTP redirects are refused. The token's bot ID must match `bot_id`.
+delivery. HTTP redirects are refused. The token's bot ID must match the private `TELEGRAM_BOT_ID`.
 
 Telegram receives fixed severity/category labels and counts, an original
 timestamp and a batch ID. Free-text check details, container/endpoint names,
@@ -64,19 +64,21 @@ reference: [Telegram HTML style](https://core.telegram.org/bots/api#html-style).
 
    ```bash
    sudo install -d -m 0700 data/monitoring
-   sudo python3 -c 'import os; from pathlib import Path; os.umask(0o077); Path("data/monitoring/telegram.env").open("x").write("TELEGRAM_BOT_TOKEN=\n")'
+   sudo python3 -c 'import os; from pathlib import Path; os.umask(0o077); Path("data/monitoring/telegram.env").open("x").write("TELEGRAM_BOT_TOKEN=\nTELEGRAM_BOT_ID=\nTELEGRAM_CHAT_ID=\n")'
    sudoedit data/monitoring/telegram.env
    ```
 
-   Set `TELEGRAM_BOT_TOKEN=<NEW_NOTIFICATION_BOT_TOKEN>` in the editor. The file
+   Fill `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_ID` (the token's numeric prefix),
+   and `TELEGRAM_CHAT_ID` (the recipient's numeric private user ID). These values
+   stay in the ignored env file. The file
    must be regular, owned by the monitor runner (root for the installed unit)
    and mode 0600. Restore existing credentials from backup when rebuilding.
    Hermes must not receive this credential.
 3. Copy `monitoring/config.json` to private
    `data/monitoring/telegram-staged.json` (root-owned, mode 0600). In the
-   **staged copy**, set `notification.telegram.enabled` to `true`, `bot_id` to
-   the new numeric bot ID as a string, and `chat_id` to the recipient's numeric
-   user ID as a string. Keep `credentials_file` as
+   **staged copy**, set `notification.telegram.enabled` to `true` and omit
+   `bot_id` and `chat_id`; they are loaded from the private file. Keep
+   `credentials_file` as
    `data/monitoring/telegram.env`. Keep delivery disabled during bot replacement.
 
 After authorizing test messages, run these from the repository root using the
@@ -104,8 +106,9 @@ After acceptance and rollout authorization, apply the staged Telegram settings
 to the deployed `monitoring/config.json`; the timer reads them on its next run,
 without a unit restart. On rebuilt hosts install the updated `scheduled_jobs`
 role first, including `monitor_telegram.py` and the test command. The tracked
-configuration now contains the accepted bot/recipient IDs and enabled setting;
-restore the private env credential before enabling the timer on a rebuilt host. Keep Matrix active and verify both channels on the first
+configuration contains only the enabled setting and private credential-file
+path. Restore the env file with its token and IDs before enabling the timer on
+a rebuilt host. Keep Matrix active and verify both channels on the first
 real alert/recovery cycle. Offline tests do not establish live acceptance.
 
 #### Delivery state, retries and rollback
@@ -208,7 +211,28 @@ restart is required. Private preview evidence is under
 Private evidence is retained in ignored
 `data/monitoring/telegram-live-evidence.json`; the pre-activation configuration
 is backed up as `data/monitoring/telegram-pre-enable-config.json`. Tokens remain
-only in the private env file; enabled/bot/recipient settings are tracked.
+only in the private env file. The tracked settings now include only the enabled
+flag and the private file path.
+
+Private-ID migration on 2026-11-25: bot and recipient IDs were moved from
+tracked configuration to `TELEGRAM_BOT_ID` and `TELEGRAM_CHAT_ID` in the
+root-owned 0600 `telegram.env`. Both the monitor and synthetic test command
+resolve absent IDs from that private file and validate the effective settings.
+Legacy configurations with explicit IDs and JSON credential files remain
+readable. Explicit configuration IDs take precedence; missing or invalid
+effective IDs fail closed. Private delivery-state schema 1 retains the original
+bot/recipient binding. Tokens, destinations, check history, and Telegram,
+Matrix and status-listener queue files were preserved; live state hashes were
+unchanged during migration. No messages or service restarts were needed.
+All 46 monitoring tests and two Matrix status-listener tests passed.
+
+For code rollback before private-ID support, restore the matching private
+`data/monitoring/telegram-before-private-ids.env` and
+`data/monitoring/telegram-before-private-ids-config.json` as a pair, after
+letting the current monitor finish. Keep delivery state and claims intact.
+Bot/chat IDs remain in earlier published Git commits; this change removes
+them from the current tree without rewriting history. Matrix and the other
+stack consumers require no configuration or record changes.
 
 Backrest currently has authentication disabled. If authentication is enabled or the API changes, its check will report an error until the monitor is updated. Check details deliberately omit API response bodies and raw exceptions to avoid logging secrets.
 

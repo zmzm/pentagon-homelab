@@ -43,7 +43,7 @@ def validate_config(config):
         raise ValueError('Telegram credentials file is required')
 
 
-def load_credentials(path, bot_id):
+def private_settings(path):
     # O_NOFOLLOW also rejects a symlink at the credential boundary.
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(descriptor) as source:
@@ -54,33 +54,63 @@ def load_credentials(path, bot_id):
     if len(raw) > 4096:
         raise ValueError('Telegram credential file is too large')
     if path.suffix == '.env':
-        token = env_token(raw)
+        values = env_values(raw)
+        return {'bot_token': values.get('TELEGRAM_BOT_TOKEN'),
+                'bot_id': values.get('TELEGRAM_BOT_ID'), 'chat_id': values.get('TELEGRAM_CHAT_ID')}
     else:
         # Retain the original JSON credential contract for existing installations.
         credentials = json.loads(raw)
-        token = credentials.get('bot_token') if isinstance(credentials, dict) else None
+        if not isinstance(credentials, dict):
+            raise ValueError('Invalid Telegram credential file')
+        return credentials
+
+
+def load_credentials(path, bot_id):
+    token = private_settings(path).get('bot_token')
     if not isinstance(token, str) or not re.fullmatch(re.escape(bot_id) + r':[A-Za-z0-9_-]{20,100}', token):
         raise ValueError('Telegram token does not match the configured bot')
     return token
 
 
-def env_token(raw):
-    """Read one literal assignment without sourcing or expanding shell content."""
-    token = None
+def env_values(raw):
+    """Read literal monitoring settings without executing shell content."""
+    values = {}
+    allowed = {'TELEGRAM_BOT_TOKEN', 'TELEGRAM_BOT_ID', 'TELEGRAM_CHAT_ID'}
     for line in raw.splitlines():
         line = line.strip()
         if not line or line.startswith('#'):
             continue
         key, separator, value = line.partition('=')
-        if not separator or key.strip() != 'TELEGRAM_BOT_TOKEN' or token is not None:
-            raise ValueError('Expected one TELEGRAM_BOT_TOKEN assignment')
+        key = key.strip()
+        if not separator or key not in allowed or key in values:
+            raise ValueError('Unexpected or duplicate Telegram setting')
         value = value.strip()
         if value.startswith(('"', "'")):
             if len(value) < 2 or value[-1] != value[0]:
                 raise ValueError('Invalid quoted Telegram token')
             value = value[1:-1]
-        token = value
-    return token
+        values[key] = value
+    return values
+
+
+def env_token(raw):
+    return env_values(raw).get('TELEGRAM_BOT_TOKEN')
+
+
+def resolve_config(config, root):
+    if not isinstance(config, dict) or type(config.get('enabled')) is not bool:
+        raise ValueError('Invalid Telegram configuration')
+    resolved = dict(config)
+    if resolved['enabled'] and any(key not in resolved for key in ('bot_id', 'chat_id')):
+        path = resolved.get('credentials_file')
+        if not isinstance(path, str) or not path:
+            raise ValueError('Telegram credentials file is required')
+        settings = private_settings(root / path)
+        for key in ('bot_id', 'chat_id'):
+            if key not in resolved:
+                resolved[key] = settings.get(key)
+    validate_config(resolved)
+    return resolved
 
 
 def summary(messages):

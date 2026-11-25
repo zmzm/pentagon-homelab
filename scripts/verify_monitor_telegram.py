@@ -7,8 +7,9 @@ import os
 from pathlib import Path
 import time
 
+import monitor
 from monitor import telegram_notifications
-from monitor_telegram import validate_config
+from monitor_telegram import resolve_config
 
 
 def main():
@@ -22,8 +23,7 @@ def main():
     if path == Path('/var/lib/homelab-monitor') or not path.name.startswith('telegram-test-'):
         raise ValueError('Use an isolated telegram-test-* state directory')
     config = json.loads(args.config.read_text())
-    notification = config['notification']['telegram']
-    validate_config(notification)
+    notification = resolve_config(config['notification']['telegram'], monitor.ROOT)
     if not notification['enabled']:
         raise ValueError('Enable Telegram in the staged configuration first')
     os.umask(0o077)

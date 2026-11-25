@@ -203,6 +203,38 @@ class TelegramState(unittest.TestCase):
 
 
 class TelegramConfiguration(unittest.TestCase):
+    def test_private_env_resolves_ids_without_mutating_tracked_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / 'telegram.env'
+            path.write_text(f'TELEGRAM_BOT_TOKEN={TOKEN}\nTELEGRAM_BOT_ID=123456\nTELEGRAM_CHAT_ID=654321\n')
+            path.chmod(0o600)
+            config = {'enabled': True, 'credentials_file': 'telegram.env'}
+            self.assertEqual(telegram.resolve_config(config, root),
+                             {**config, 'bot_id': '123456', 'chat_id': '654321'})
+            self.assertEqual(set(config), {'enabled', 'credentials_file'})
+            self.assertEqual(telegram.load_credentials(path, '123456'), TOKEN)
+
+    def test_private_id_validation_and_duplicate_rejection(self):
+        fixtures = ['TELEGRAM_BOT_ID=123456\n',
+                    'TELEGRAM_BOT_ID=123456\nTELEGRAM_CHAT_ID=-100123\n',
+                    'TELEGRAM_BOT_ID=123456\nTELEGRAM_CHAT_ID=*\n',
+                    'TELEGRAM_BOT_ID=123456\nTELEGRAM_CHAT_ID=654321\nTELEGRAM_CHAT_ID=999\n']
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / 'telegram.env'
+            for raw in fixtures:
+                with self.subTest(raw=raw):
+                    path.write_text('TELEGRAM_BOT_TOKEN=' + TOKEN + '\n' + raw)
+                    path.chmod(0o600)
+                    with self.assertRaises(ValueError):
+                        telegram.resolve_config({'enabled': True, 'credentials_file': 'telegram.env'}, root)
+
+    def test_disabled_and_legacy_explicit_id_config_do_not_require_private_id_fields(self):
+        root = Path('/unused')
+        self.assertEqual(telegram.resolve_config({'enabled': False}, root), {'enabled': False})
+        self.assertEqual(telegram.resolve_config(CONFIG, root), CONFIG)
+
     def test_env_credentials_support_literal_tokens_and_quotes_without_expansion(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'telegram.env'
@@ -257,6 +289,24 @@ class TelegramConfiguration(unittest.TestCase):
 
 
 class MonitorIntegration(unittest.TestCase):
+    def test_private_ids_match_retained_state_without_resending(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / 'telegram.env'
+            path.write_text(f'TELEGRAM_BOT_TOKEN={TOKEN}\nTELEGRAM_BOT_ID=123456\nTELEGRAM_CHAT_ID=654321\n')
+            path.chmod(0o600)
+            state = telegram.load_state(root / 'telegram.json', CONFIG)
+            state['checks'] = {'disk': {'level': 'critical', 'last_notified': 1000}}
+            monitor.save_state(root / 'telegram.json', state)
+            config = {'reminder_hours': 6, 'notification': {'telegram': {
+                'enabled': True, 'credentials_file': 'telegram.env'}}}
+            with patch.object(monitor, 'ROOT', root), patch.object(telegram, 'send') as send, \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(monitor.telegram_notifications(config,
+                    {'disk': {'level': 'critical', 'message': 'private'}}, root, 1001), 0)
+            send.assert_not_called()
+            self.assertEqual(telegram.load_state(root / 'telegram.json', CONFIG)['checks'], state['checks'])
+
     def test_alert_reminder_and_recovery_use_separate_queue_with_matrix_fallback(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -367,6 +417,22 @@ class MonitorIntegration(unittest.TestCase):
 
 
 class SyntheticAlertCommand(unittest.TestCase):
+    def test_command_reads_private_ids_with_no_ids_in_staged_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config_path = root / 'config.json'
+            config_path.write_text(json.dumps({'reminder_hours': 6, 'notification': {'telegram': {
+                'enabled': True, 'credentials_file': 'telegram.env'}}}))
+            env_path = root / 'telegram.env'
+            env_path.write_text(f'TELEGRAM_BOT_TOKEN={TOKEN}\nTELEGRAM_BOT_ID=123456\nTELEGRAM_CHAT_ID=654321\n')
+            env_path.chmod(0o600)
+            with patch('sys.argv', ['verify', '--config', str(config_path), '--state-dir',
+                                   str(root / 'telegram-test-private-ids'), '--phase', 'problem']), \
+                 patch.object(monitor, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()), \
+                 patch.object(telegram, 'send', return_value=('confirmed', 0)) as send:
+                self.assertEqual(verify.main(), 0)
+            self.assertEqual(send.call_args.args[:2], (TOKEN, '654321'))
+
     def test_isolated_problem_repeat_and_recovery_are_labeled_and_do_not_collect(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -261,8 +261,8 @@ def transitions(previous, results, now, reminder_seconds):
 
 
 def telegram_notifications(config, results, state_dir, now):
-    notification = config['notification'].get('telegram', {'enabled': False})
-    monitor_telegram.validate_config(notification)
+    notification = monitor_telegram.resolve_config(
+        config['notification'].get('telegram', {'enabled': False}), ROOT)
     if not notification['enabled']:
         return 0
     path = state_dir / 'telegram.json'

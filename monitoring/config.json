@@ -47,9 +47,7 @@
     ],
     "telegram": {
       "enabled": true,
-      "credentials_file": "data/monitoring/telegram.env",
-      "bot_id": "9052809838",
-      "chat_id": "7000404530"
+      "credentials_file": "data/monitoring/telegram.env"
     }
   },
   "recovery_test": {
