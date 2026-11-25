@@ -147,8 +147,7 @@ class TelegramConfigurationTests(unittest.TestCase):
         asyncio.run(self.adapter._handle_text_message(Update(1, message=self.message(654321)), None))
         self.adapter._build_triggered_event.assert_not_called()
         # Approval lookup is permitted; no native pairing store mutation occurs.
-        self.assertTrue(self.runner.pairing_store.mock_calls)
-        self.assertTrue(all(call[0] == 'is_approved' for call in self.runner.pairing_store.mock_calls))
+        self.assertEqual(self.runner.pairing_store.mock_calls, [])
 
     def test_blocked_intake_logs_exclude_message_and_credentials(self):
         message = Message(message_id=1, date=datetime.now(timezone.utc),
@@ -165,15 +164,16 @@ class TelegramConfigurationTests(unittest.TestCase):
             safe = _redact_telegram_error_text(RuntimeError('https://api.telegram.org/bot' + token + '/getUpdates'))
         self.assertNotIn(token, safe)
 
-    def test_known_gap_group_callback_bypasses_message_sender_gate(self):
-        # Characterize a deployment blocker, not a successful group-denial check.
+    def test_group_callbacks_rejected_for_allowlisted_sender(self):
         self.assertFalse(self.adapter._is_user_authorized_from_message(self.message(chat_type='group')))
-        self.assertTrue(self.adapter._is_callback_user_authorized(
-            '123456', chat_id='-100123456', chat_type='group'))
+        for kind in ('group', 'supergroup', 'forum', 'channel', None):
+            with self.subTest(kind=kind):
+                self.assertFalse(self.adapter._is_callback_user_authorized(
+                    '123456', chat_id='-100123456', chat_type=kind))
 
-    def test_known_gap_wildcard_allowlist_overrides_closed_access_flags(self):
+    def test_ambient_wildcard_cannot_expand_startup_allowlist(self):
         with patch.dict(os.environ, {'TELEGRAM_ALLOWED_USERS': '*'}):
-            self.assertTrue(self.adapter._is_user_authorized_from_message(self.message(654321)))
+            self.assertFalse(self.adapter._is_user_authorized_from_message(self.message(654321)))
 
     def test_native_slash_commands_do_not_restore_admin_tools(self):
         source = SessionSource(platform=Platform.TELEGRAM, chat_id='123456',
@@ -186,19 +186,54 @@ class TelegramConfigurationTests(unittest.TestCase):
                         'config', 'tools', 'model', 'approve', 'skills'):
             self.assertFalse(policy.can_run(source.user_id, command), command)
 
-    def test_retained_pairing_is_an_additional_grant(self):
-        # Records are a native authorization UNION, even with an explicit allowlist.
-        # Keep this limitation visible: deployment must check both pairing layouts.
+    def test_retained_pairing_cannot_expand_allowlist(self):
         self.runner.pairing_store = Mock()
         self.runner.pairing_store.is_approved.return_value = True
         source = SessionSource(platform=Platform.TELEGRAM, chat_id='654321',
                                chat_type='dm', user_id='654321')
-        self.assertTrue(self.runner._is_user_authorized(source))
-        self.assertTrue(self.adapter._is_user_authorized_from_message(self.message(654321)))
-        self.assertTrue(self.adapter._is_callback_user_authorized('654321'))
+        self.assertFalse(self.runner._is_user_authorized(source))
+        self.assertFalse(self.adapter._is_user_authorized_from_message(self.message(654321)))
+        self.assertFalse(self.adapter._is_callback_user_authorized('654321'))
+
+    def test_alternate_grants_cannot_expand_telegram_but_matrix_is_unchanged(self):
+        self.runner.pairing_store = Mock()
+        self.runner.pairing_store.is_approved.return_value = True
+        with patch.dict(os.environ, {'TELEGRAM_ALLOW_ALL_USERS': 'true',
+                                    'GATEWAY_ALLOW_ALL_USERS': 'true', 'GATEWAY_ALLOWED_USERS': '*'}):
+            source = SessionSource(platform=Platform.TELEGRAM, chat_id='654321',
+                                   chat_type='dm', user_id='654321', role_authorized=True)
+            self.assertFalse(self.runner._is_user_authorized(source))
+            matrix = SessionSource(platform=Platform.MATRIX, chat_id='!fixture:server',
+                                   chat_type='dm', user_id='@fixture:server')
+            self.assertTrue(self.runner._is_user_authorized(matrix))
+
+    def test_allowed_private_callback_still_reaches_native_picker(self):
+        self.adapter._handle_model_picker_callback = AsyncMock()
+        query = SimpleNamespace(data='mp:fixture', from_user=User(123456, 'Fixture', False),
+                                message=self.message(), answer=AsyncMock())
+        asyncio.run(self.adapter._handle_callback_query(SimpleNamespace(callback_query=query), None))
+        self.adapter._handle_model_picker_callback.assert_awaited_once_with(query, 'mp:fixture', '123456')
+
+    def test_group_callbacks_never_dispatch_or_claim_retained_prompts(self):
+        for kind in ('group', 'supergroup', 'channel'):
+            for data in ('mp:fixture', 'cp:fixture', 'ea:once:7', 'sc:once:fixture',
+                         'cl:fixture:0', 'update_prompt:y'):
+                with self.subTest(kind=kind, data=data):
+                    self.adapter._handle_model_picker_callback = AsyncMock()
+                    self.adapter._handle_choice_picker_callback = AsyncMock()
+                    self.adapter._approval_state = {7: 'fixture-session'}
+                    self.adapter._slash_confirm_state = {'fixture': 'fixture-session'}
+                    self.adapter._clarify_state = {'fixture': 'fixture-session'}
+                    query = SimpleNamespace(data=data, from_user=User(123456, 'Fixture', False),
+                                            message=self.message(chat_type=kind), answer=AsyncMock())
+                    asyncio.run(self.adapter._handle_callback_query(SimpleNamespace(callback_query=query), None))
+                    self.adapter._handle_model_picker_callback.assert_not_called()
+                    self.adapter._handle_choice_picker_callback.assert_not_called()
+                    query.answer.assert_awaited_once()
+                    self.assertEqual(self.adapter._approval_state, {7: 'fixture-session'})
+                    self.assertEqual(self.adapter._slash_confirm_state, {'fixture': 'fixture-session'})
+                    self.assertEqual(self.adapter._clarify_state, {'fixture': 'fixture-session'})
 
 
 if __name__ == '__main__':
-    print('NOTICE: known-gap tests characterize wildcard, retained-pairing and group-callback grants; '
-          'passing tests do not clear deployment blockers.', flush=True)
     unittest.main(testRunner=unittest.TextTestRunner(stream=sys.stdout, verbosity=2))

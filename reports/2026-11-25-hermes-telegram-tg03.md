@@ -1,5 +1,9 @@
 # TG-03: Telegram security review and regression evidence
 
+Historical review of TG-02 before remediation. The subsequent
+[fix report](2026-11-25-hermes-telegram-tg03-fixes.md) records current remediation
+and verification; findings and check counts below describe the reviewed revision.
+
 Task: [TG-03](https://trello.com/c/74euTZQZ), reviewing
 [TG-02](https://trello.com/c/9aNMlcit). The operator confirmed review of TG-02
 only: `git diff 271d4be...49ddf84`, one commit,

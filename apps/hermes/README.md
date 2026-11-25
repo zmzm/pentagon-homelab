@@ -110,7 +110,9 @@ private `apps/hermes/.env` through the normal secret-handling workflow. The user
 list must contain only comma-separated positive numeric Telegram **user** IDs;
 no usernames, wildcards, negative group IDs or whitespace-only entries. Do not
 paste tokens into chat, Trello, Git or command arguments. Compose rejects missing
-or empty values, but does not validate numeric syntax. Keep the bot separate from
+or empty values; the read-only runtime guard rejects malformed lists before
+native startup (positive ASCII decimal IDs, up to sixteen digits, comma-separated;
+surrounding spaces are trimmed). Keep the bot separate from
 notification bots and preserve all existing Matrix credentials and settings.
 
 The installed runtime uses `telegram.unauthorized_dm_behavior: ignore` to avoid
@@ -132,9 +134,12 @@ changes and cron management.
 Before deployment, recheck both `data/hermes/pairing` and
 `data/hermes/platforms/pairing` for `telegram-approved.json` and
 `telegram-pending.json`, plus native `.env`, legacy `gateway.json` and secondary
-profiles for alternate Telegram/global grants. **Existing approved pairing records
-are a union with the user allowlist**, including callback authorization. Ignore
-mode prevents new unauthorized pairing requests; it does not revoke approvals.
+profiles for alternate Telegram/global grants. Native Hermes treats existing
+approved pairing records as additional grants. This deployment's runtime guard
+overrides that behavior for Telegram: only Compose's validated startup user list
+can authorize a human in their own DM, including callbacks and platform events.
+It forces unauthorized Telegram DMs to ignore mode. Pairing/global/role/chat
+grants cannot broaden this policy; retained records are preserved without edits.
 If records or unexpected grants exist, stop rollout and review them with the
 operator; do not delete or migrate native state automatically. No native pairing
 approval is part of this setup. Repeat the check immediately before rollout.
@@ -147,25 +152,31 @@ disabled, group privacy enabled and owning-account two-step verification enabled
 These are dated observations and operator attestations, not live Telegram API
 acceptance. See the [TG-02 verification report](../../reports/2026-11-25-hermes-telegram-tg02.md).
 
-TG-03 review reproduced two additional rollout blockers: Compose accepts a
-wildcard user list that opens native authorization, and group callback
-authorization does not apply the empty group-message sender gate. The expanded
-offline tests deliberately characterize these gaps; a passing run does not
-clear them. See the [TG-03 security review](../../reports/2026-11-25-hermes-telegram-tg03.md)
-for evidence, required follow-up and the retained pairing/bytecode prerequisites.
-Resolve the findings before executing the TG-04 deployment steps below.
+The [TG-03 security review](../../reports/2026-11-25-hermes-telegram-tg03.md)
+reproduced wildcard and group-callback gaps. The
+[TG-03 fixes](../../reports/2026-11-25-hermes-telegram-tg03-fixes.md) add a read-only
+`runtime_guard` mount selected by a pinned `PYTHONPATH`. Python's `sitecustomize`
+installs a Telegram-only guard on native `GatewayAuthorizationMixin` before CLI
+or supervised gateway startup. It freezes the validated Compose user IDs before
+native dotenv/profile loading and rejects groups, unknown users, mismatched DM
+chat IDs and bots, including retained-prompt callbacks. Initialization failure
+stops the interpreter with a sanitized error. Other platforms retain native
+authorization. This integration depends on the installed native method interface;
+re-run installed-image tests before any image change. Keep the guard mounted for
+every Telegram-enabled gateway process; trusted host/container administrators
+can bypass it by changing the launcher/environment or running Python with `-S`.
 
 Validate locally from the repository root:
 
 ```bash
-python3 -m unittest discover -s scripts -p 'test_hermes_telegram_config.py'
+python3 -m unittest discover -s scripts -p 'test_hermes_telegram*.py'
 python3 -m unittest discover -s scripts -p 'test_verify_hermes_skills.py'
 python3 scripts/verify_hermes_skills.py
 ```
 
 The last command uses a disposable container with no network, fixture credentials,
 an isolated home and read-only proposed config/plugin/bridge mounts. It checks
-CLI/Matrix/Telegram/cron effective schemas and fourteen native Telegram cases without
+CLI/Matrix/Telegram/cron effective schemas and seventeen native Telegram cases without
 starting an adapter or making model/Telegram requests. Private detailed evidence
 is written to ignored `reports/hermes-skills-static-evidence.json`. The installed
 image's cached Python bytecode failed with `bad marshal data`; offline validation

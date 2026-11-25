@@ -238,7 +238,8 @@ def main():
                 envfile.write_text(''.join(k + '=' + env[k] + '\n' for k in forwarded if k in env))
             else:
                 # MCP tools/list is local stdio and never uses these fixture credentials.
-                envfile.write_text('GATEWAY_URL=http://127.0.0.1:9\nGATEWAY_TOKEN=offline-fixture-not-a-credential\n')
+                envfile.write_text('GATEWAY_URL=http://127.0.0.1:9\nGATEWAY_TOKEN=offline-fixture-not-a-credential\n'
+                                  'TELEGRAM_BOT_TOKEN=123456:offline-fixture\nTELEGRAM_ALLOWED_USERS=123456\n')
             envfile.chmod(0o600)
             mounts = {
                 ROOT / 'apps/hermes/config.yaml': '/opt/data/config.yaml',
@@ -247,11 +248,13 @@ def main():
                 ROOT / 'apps/hermes/plugins/homelab-skill-tools': '/opt/data/plugins/homelab-skill-tools',
                 guarded_bridge: '/integration/gateway_mcp.py',
                 ROOT / 'scripts/verify_hermes_telegram.py': '/integration/verify_hermes_telegram.py',
+                ROOT / 'apps/hermes/runtime_guard': '/integration/runtime-guard',
             }
             command = ['run', '-d', '--name', name, '--network', 'agent-network' if live else 'none',
                        '--entrypoint', PYTHON, '--tmpfs',
                        '/opt/data:uid=10000,gid=10000,mode=0700,size=256m',
                        '--env-file', str(envfile), '-e', 'HOME=/opt/data',
+                       '-e', 'PYTHONPATH=/integration/runtime-guard:/opt/hermes',
                        '--security-opt', 'no-new-privileges:true', '--cap-drop', 'ALL']
             if not live:
                 # Ignore stale/broken image bytecode without changing the image.
@@ -288,8 +291,7 @@ print('PASS: isolated home passes native CLI ownership/permissions checks as obs
             if not live:
                 record['telegram'] = docker('exec', '--user', '10000:10000', name,
                     PYTHON, '/integration/verify_hermes_telegram.py', offline_diagnostic=True)
-                print('PASS: offline native Telegram configuration, intake and slash access tests; '
-                      'includes known-gap characterization, not deployment clearance (see evidence)', flush=True)
+                print('PASS: offline native Telegram configuration, intake, callback and slash rejection tests', flush=True)
             record['http_guard_check'] = docker('exec', '-i', '--user', '10000:10000', name,
                 PYTHON, '-', input=GUARD_CHECK, offline_diagnostic=not live)
             print(record['http_guard_check'], flush=True)

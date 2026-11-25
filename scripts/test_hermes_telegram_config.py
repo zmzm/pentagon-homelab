@@ -32,14 +32,14 @@ class TelegramComposeTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertNotEqual(self.render({key: ''}).returncode, 0)
 
-    def test_known_gap_allowlist_syntax_is_not_validated(self):
-        # TG-03 evidence: nonempty interpolation is not numeric-ID validation.
-        for value in ('*', '123456,*', '   ', '@fixture', '-100123456'):
-            with self.subTest(value=value):
-                result = self.render({'TELEGRAM_ALLOWED_USERS': value})
-                self.assertEqual(result.returncode, 0, 'Fixture Compose rendering failed; output suppressed')
-                self.assertEqual(json.loads(result.stdout)['services']['hermes']['environment']
-                                 ['TELEGRAM_ALLOWED_USERS'], value)
+    def test_runtime_authorization_guard_cannot_be_overridden_by_ambient_pythonpath(self):
+        result = self.render({'PYTHONPATH': '/untrusted-fixture'})
+        self.assertEqual(result.returncode, 0, 'Fixture Compose rendering failed; output suppressed')
+        hermes = json.loads(result.stdout)['services']['hermes']
+        self.assertEqual(hermes['environment']['PYTHONPATH'], '/integration/runtime-guard:/opt/hermes')
+        guard = next(v for v in hermes['volumes'] if v['target'] == '/integration/runtime-guard')
+        self.assertTrue(guard['read_only'])
+        self.assertEqual(Path(guard['source']), ROOT / 'apps/hermes/runtime_guard')
 
     def test_telegram_cannot_inherit_open_access_or_publish_ports(self):
         result = self.render({'GATEWAY_ALLOW_ALL_USERS': 'true', 'GATEWAY_ALLOWED_USERS': '*',
