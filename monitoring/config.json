@@ -44,7 +44,13 @@
     "credentials_file": "data/monitoring/matrix.json",
     "allowed_users": [
       "@vladjik:pentagonlab.org"
-    ]
+    ],
+    "telegram": {
+      "enabled": false,
+      "credentials_file": "data/monitoring/telegram.json",
+      "bot_id": "",
+      "chat_id": ""
+    }
   },
   "recovery_test": {
     "status_file": "/var/lib/homelab-recovery/status.json",
