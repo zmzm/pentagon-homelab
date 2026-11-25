@@ -4,6 +4,11 @@ Follow-up to the [security review](2026-11-25-hermes-telegram-tg03.md), authoriz
 by the request to fix all findings. Implementation and isolated verification
 only; production deployment/restart and live acceptance remain separate.
 
+**All review findings are remediated in the proposed configuration.** Wildcard
+startup is rejected, non-DM callbacks and retained pairing grants cannot bypass
+the user list, and native imports/MCP registration pass using the production
+disposable-cache configuration. Nothing in this report records deployment.
+
 ## Authorization findings fixed
 
 `apps/hermes/runtime_guard/sitecustomize.py` is loaded from a read-only mount via
@@ -43,7 +48,7 @@ using Python `-S`, or replacing native code. Revalidate before an image upgrade.
   remains exercised, and its effective schema is unchanged. No Telegram adapter
   connection, model request, Matrix event or production write was made.
 - `python3 -m unittest discover -s scripts -p 'test_hermes_telegram*.py'`:
-  **6 passed**, including subprocess checks proving invalid configuration stops
+  **7 passed**, including subprocess checks proving invalid configuration stops
   Python before its command runs, sanitized errors, strict policy decisions and
   the read-only guard mount/pinned path in fixture Compose rendering.
 - `python3 -m unittest discover -s scripts -p 'test_verify_hermes_skills.py'`:
@@ -53,15 +58,44 @@ Installed image:
 `sha256:2f305c9bdc81731f48664586d23cb6a6f838a15ad7be1bfabe0c3c269d8e09b9`.
 Private native evidence remains ignored at
 `reports/hermes-skills-static-evidence.json`; production container identity/start
-state and skill/memory hashes were unchanged. The harness still uses the earlier
-test-only bytecode cache workaround; bytecode remediation is tracked separately.
+state and skill/memory hashes were unchanged.
+
+## Damaged image bytecode remediated
+
+The original image was tested in a disposable no-network container without
+production mounts or credentials. Importing `gateway.authz_mixin` and
+`gateway.run.GatewayRunner` failed with `ValueError: bad marshal data (unknown
+type code)`, including provider-plugin failures. The traceback reached cached
+standard-library `urllib.request` bytecode; this was reproducible independently
+of the proposed authorization guard.
+
+Compose now sets `PYTHONPYCACHEPREFIX=/tmp/hermes-pycache` and supplies a private
+128 MiB tmpfs owned by the installed image's Hermes UID/GID 10000. Each container
+start gets a fresh cache, avoiding damaged image `.pyc` files without modifying
+the image or deleting anything in native home. MCP's explicit environment now
+forwards the same cache path. The verifier's injected `sys.pycache_prefix` bridge
+override and its validation-only cache prefix were removed. Live CLI validation
+also uses the production cache settings and a fixture Telegram credential,
+never the real Telegram bot token.
+
+The updated offline harness passed native CLI and `GatewayRunner` imports,
+confirmed the actual runner inherits the installed authorization guard, and
+registered all fifteen MCP schemas through the real filtered child environment.
+All **17 native Telegram tests** and four platform selections passed under this
+configuration. This verifies startup imports and MCP loading, not a full native
+service boot or external reachability. The original image remains unchanged.
+
+The full gateway/Matrix fixture suite was rerun after remediation: **148 passed,
+zero skipped**, using existing Node 24.14.1 and local HTTP/Unix fixtures. No real
+approval event or Docker operation against a production service occurred.
 
 Compatibility: native Hermes is the affected consumer. Telegram grants are
 intentionally narrowed to the validated startup list. No MCP/gateway/broker/
 Matrix relay API, credential boundary, toolset, native state format or approval/
 execution/delivery record changes. Native pairing approvals remain readable but
 do not authorize Telegram while the guard is active; Matrix pairing behavior is
-unchanged. Rollback to pre-TG-02 disables Telegram and preserves all current state.
+unchanged. Rollback disables Telegram and preserves all current state and the
+verified cache settings; reverting the cache settings restores the import failure.
 Removing only the guard while leaving Telegram enabled would restore the gaps.
 
 No deployment is recorded here. TG-04 still requires operator approval, private

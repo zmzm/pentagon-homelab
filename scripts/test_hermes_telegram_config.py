@@ -41,6 +41,13 @@ class TelegramComposeTests(unittest.TestCase):
         self.assertTrue(guard['read_only'])
         self.assertEqual(Path(guard['source']), ROOT / 'apps/hermes/runtime_guard')
 
+    def test_python_cache_is_private_ephemeral_and_pinned(self):
+        result = self.render({'PYTHONPYCACHEPREFIX': '/untrusted-fixture'})
+        self.assertEqual(result.returncode, 0, 'Fixture Compose rendering failed; output suppressed')
+        hermes = json.loads(result.stdout)['services']['hermes']
+        self.assertEqual(hermes['environment']['PYTHONPYCACHEPREFIX'], '/tmp/hermes-pycache')
+        self.assertIn('/tmp/hermes-pycache:uid=10000,gid=10000,mode=0700,size=128m', hermes['tmpfs'])
+
     def test_telegram_cannot_inherit_open_access_or_publish_ports(self):
         result = self.render({'GATEWAY_ALLOW_ALL_USERS': 'true', 'GATEWAY_ALLOWED_USERS': '*',
                               'TELEGRAM_ALLOW_ALL_USERS': 'true', 'TELEGRAM_WEBHOOK_URL': 'https://fixture.invalid'})

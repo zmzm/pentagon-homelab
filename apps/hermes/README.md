@@ -91,8 +91,9 @@ docker compose ps
 ```
 
 MCP SDK 2.x uses `MCPServer`; the bridge also supports v1's `FastMCP`. Hermes filters its
-child-process environment: `mcp_servers.personal.env` explicitly forwards only the gateway
-token and URL using native interpolation. A direct bridge test alone misses this boundary.
+child-process environment: `mcp_servers.personal.env` explicitly forwards the gateway
+token, URL and disposable Python cache path using native interpolation. A direct
+bridge test alone misses this boundary.
 Core configuration, identity and bridge files are read-only mounts.
 
 ## Telegram alongside Matrix (TG-02)
@@ -179,11 +180,14 @@ an isolated home and read-only proposed config/plugin/bridge mounts. It checks
 CLI/Matrix/Telegram/cron effective schemas and seventeen native Telegram cases without
 starting an adapter or making model/Telegram requests. Private detailed evidence
 is written to ignored `reports/hermes-skills-static-evidence.json`. The installed
-image's cached Python bytecode failed with `bad marshal data`; offline validation
-uses a fresh disposable bytecode cache in both verifier and instrumented MCP child.
-That workaround is confined to tests. Resolve or separately verify this restart
-risk before rollout; the checks do not prove the unmodified image will restart
-successfully with its existing caches.
+image's cached Python bytecode failed with `bad marshal data`. Production now
+sets `PYTHONPYCACHEPREFIX=/tmp/hermes-pycache` on a private 128 MiB tmpfs, owned
+by the image's UID/GID 10000 and recreated when the container starts. The MCP
+configuration explicitly forwards that path through native environment filtering.
+The harness uses this same configuration, with no bridge bytecode override, and
+checks native CLI/gateway imports plus real MCP registration. The image and
+retained native home are unchanged. This verifies the import/cache boundary;
+full service startup and live Matrix/Telegram acceptance belong to TG-04.
 
 For TG-04, after TG-03 review and explicit deployment approval:
 
@@ -204,9 +208,12 @@ For TG-04, after TG-03 review and explicit deployment approval:
    tool or paid workflow merely to check chat. Review bounded private logs for
    credential leakage; polling readiness does not prove application acceptance.
 
-For rollback, after approval to interrupt Hermes, restore the pre-TG-02 versions
-of `docker-compose.yml`, `config.yaml` and the verification scripts, validate
-Compose, then recreate only Hermes using the **same existing image**. Keep
+For rollback, after approval to interrupt Hermes, remove the Telegram credential
+and authorization forwarding from Compose and the Telegram platform selection/
+configuration added in TG-02, restoring Matrix-only conversation. Retain the
+verified `PYTHONPYCACHEPREFIX` environment/tmpfs and MCP cache forwarding to avoid
+reintroducing the damaged-image-bytecode failure. Validate Compose, then recreate
+only Hermes using the **same existing image**. Keep
 `data/hermes` and all current gateway/relay/FlowForge state and claims; do not
 restore stale snapshots or reset sessions. The restored Compose stops forwarding
 the Telegram credential; retain or remove its private `.env` entries according to
@@ -216,7 +223,9 @@ routing. Never use `down -v` or start a second poller with the same bot token.
 Compatibility: the native Hermes gateway consumes the new env/config keys; only
 Telegram's selection is added. Matrix/CLI/cron toolsets, the MCP bridge's fifteen
 schemas, gateway/broker contracts, relay credentials and persisted approval/run/
-delivery formats are unchanged. Native Telegram sessions and update receipts,
+delivery formats are unchanged. Runtime authorization is narrowed for Telegram
+only; native pairing grants remain stored but cannot expand its startup allowlist.
+The disposable cache adds no persisted-state format. Native Telegram sessions and update receipts,
 once deployed, stay in the existing Hermes home and are retained on rollback;
 the old Matrix configuration leaves them unused. There is no state migration.
 

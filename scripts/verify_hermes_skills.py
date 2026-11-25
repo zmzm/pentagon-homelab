@@ -222,10 +222,6 @@ def main():
         with tempfile.TemporaryDirectory(prefix='hermes-skills-validation-') as scratch:
             scratch = Path(scratch)
             bridge = (ROOT / 'apps/hermes/gateway_mcp.py').read_text()
-            if not live:
-                # MCP filters the parent's environment, including PYTHONPYCACHEPREFIX.
-                # Use the same disposable cache in this instrumented offline child.
-                bridge = 'import sys\nsys.pycache_prefix = "/opt/data/validation-pycache"\n' + bridge
             guard_marker = 'if __name__ == "__main__":'
             assert bridge.count(guard_marker) == 1
             guarded_bridge = scratch / 'gateway_mcp.py'
@@ -238,8 +234,10 @@ def main():
                 envfile.write_text(''.join(k + '=' + env[k] + '\n' for k in forwarded if k in env))
             else:
                 # MCP tools/list is local stdio and never uses these fixture credentials.
-                envfile.write_text('GATEWAY_URL=http://127.0.0.1:9\nGATEWAY_TOKEN=offline-fixture-not-a-credential\n'
-                                  'TELEGRAM_BOT_TOKEN=123456:offline-fixture\nTELEGRAM_ALLOWED_USERS=123456\n')
+                envfile.write_text('GATEWAY_URL=http://127.0.0.1:9\nGATEWAY_TOKEN=offline-fixture-not-a-credential\n')
+            # Never forward a real Telegram credential, including in live CLI validation.
+            with envfile.open('a') as handle:
+                handle.write('TELEGRAM_BOT_TOKEN=123456:offline-fixture\nTELEGRAM_ALLOWED_USERS=123456\n')
             envfile.chmod(0o600)
             mounts = {
                 ROOT / 'apps/hermes/config.yaml': '/opt/data/config.yaml',
@@ -253,12 +251,11 @@ def main():
             command = ['run', '-d', '--name', name, '--network', 'agent-network' if live else 'none',
                        '--entrypoint', PYTHON, '--tmpfs',
                        '/opt/data:uid=10000,gid=10000,mode=0700,size=256m',
+                       '--tmpfs', '/tmp/hermes-pycache:uid=10000,gid=10000,mode=0700,size=128m',
                        '--env-file', str(envfile), '-e', 'HOME=/opt/data',
                        '-e', 'PYTHONPATH=/integration/runtime-guard:/opt/hermes',
+                       '-e', 'PYTHONPYCACHEPREFIX=/tmp/hermes-pycache',
                        '--security-opt', 'no-new-privileges:true', '--cap-drop', 'ALL']
-            if not live:
-                # Ignore stale/broken image bytecode without changing the image.
-                command += ['-e', 'PYTHONPYCACHEPREFIX=/opt/data/validation-pycache']
             for host, destination in mounts.items():
                 command += ['-v', f'{host}:{destination}:ro']
             command += [source['Image'], '-c', 'import time; time.sleep(3600)']
@@ -281,6 +278,17 @@ _private_node(Path('/opt/data'), kind='directory', home=True)
 print('PASS: isolated home passes native CLI ownership/permissions checks as observer UID')
 """)
             print(record['isolated_home_preflight'], flush=True)
+            record['native_startup_imports'] = python(name, """
+import sys
+from gateway.authz_mixin import GatewayAuthorizationMixin
+from gateway.run import GatewayRunner
+from hermes_cli.main import main
+assert sys.pycache_prefix == '/tmp/hermes-pycache'
+assert GatewayRunner._is_user_authorized is GatewayAuthorizationMixin._is_user_authorized
+assert GatewayRunner._is_user_authorized.__module__ == 'telegram_policy'
+print('PASS: native CLI and gateway startup imports use the production cache and Telegram guard')
+""")
+            print(record['native_startup_imports'], flush=True)
             registration = (ROOT / 'scripts/verify_hermes_tool_registration.py').read_text()
             # Availability is cached on import: set the chat-session marker before
             # starting Python, so Telegram's cron exclusion cannot be a false pass.
