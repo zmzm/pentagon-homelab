@@ -46,10 +46,10 @@
       "@vladjik:pentagonlab.org"
     ],
     "telegram": {
-      "enabled": false,
+      "enabled": true,
       "credentials_file": "data/monitoring/telegram.env",
-      "bot_id": "",
-      "chat_id": ""
+      "bot_id": "9052809838",
+      "chat_id": "7000404530"
     }
   },
   "recovery_test": {

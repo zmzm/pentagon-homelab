@@ -27,13 +27,12 @@ Alerts remain in the journal too. A durable queue in the saved state retries fai
 
 A problem produces a message on first detection or severity change. Unchanged problems repeat after six hours. Recovery produces a `RECOVERED` message. Alert state persists in `/var/lib/homelab-monitor/state.json`, mode 0600; it survives reboots. Each run also logs a check summary.
 
-### Telegram migration (TG-05, awaiting live acceptance)
+### Telegram migration (TG-05, enabled with Matrix retained)
 
-Telegram delivery is implemented but **disabled** in the tracked configuration.
-The separate notification bot has been created and its token/private chat
-have been verified with read-only API calls. No live monitoring alert test has
-been run. Enabling `notification.telegram` adds outbound notifications alongside
-Matrix. Keep `notification.type`, its Matrix credentials and `allowed_users`
+Telegram delivery is **enabled** alongside Matrix as of 2026-11-25 following
+operator authorization. Telegram acknowledged the labeled synthetic problem and
+recovery messages; a repeated problem sent no duplicate. Recipient observation
+of arrival has not been recorded. The existing monitor timer remains active. Keep `notification.type`, its Matrix credentials and `allowed_users`
 unchanged until delivery is accepted; Matrix retirement is a separate task.
 
 Use a new notification bot, separate from Hermes. The sender calls only HTTPS
@@ -49,7 +48,7 @@ grouped; details remain in the local journal and Matrix. Messages use plain
 text, disable link previews, request content protection, and remain below 4096
 characters. Bot chats do not provide end-to-end encryption.
 
-#### Setup and acceptance (operator steps for a later authorized rollout)
+#### Setup and acceptance (rebuild or replacement bot)
 
 1. Create a **new monitoring bot** in BotFather, disable group joining and inline
    mode, and start its private chat from the intended recipient account. Confirm
@@ -72,7 +71,7 @@ characters. Bot chats do not provide end-to-end encryption.
    **staged copy**, set `notification.telegram.enabled` to `true`, `bot_id` to
    the new numeric bot ID as a string, and `chat_id` to the recipient's numeric
    user ID as a string. Keep `credentials_file` as
-   `data/monitoring/telegram.env`. Leave the deployed configuration disabled.
+   `data/monitoring/telegram.env`. Keep delivery disabled during bot replacement.
 
 After authorizing test messages, run these from the repository root using the
 same isolated state directory:
@@ -98,9 +97,9 @@ reset an ambiguous send to retry it.
 After acceptance and rollout authorization, apply the staged Telegram settings
 to the deployed `monitoring/config.json`; the timer reads them on its next run,
 without a unit restart. On rebuilt hosts install the updated `scheduled_jobs`
-role first, including `monitor_telegram.py` and the test command. Reapplying the
-tracked disabled config through Ansible disables Telegram until the accepted
-settings are restored. Keep Matrix active and verify both channels on the first
+role first, including `monitor_telegram.py` and the test command. The tracked
+configuration now contains the accepted bot/recipient IDs and enabled setting;
+restore the private env credential before enabling the timer on a rebuilt host. Keep Matrix active and verify both channels on the first
 real alert/recovery cycle. Offline tests do not establish live acceptance.
 
 #### Delivery state, retries and rollback
@@ -160,8 +159,8 @@ Follow-up on 2026-11-25: a root-owned 0600 `telegram.env` is populated.
 `getMe` verified the new bot identity differs from Hermes; `getChat` verified
 the intended private recipient is accessible. Inline mode is disabled, but
 BotFather still allows group joining: disable it before rollout. A private
-`data/monitoring/telegram-staged.json` is prepared. Telegram delivery remains
-disabled; no messages were sent. Env loading reads one literal
+`data/monitoring/telegram-staged.json` was prepared. At that stage Telegram
+delivery remained disabled and no messages had been sent. Env loading reads one literal
 `TELEGRAM_BOT_TOKEN` assignment, optionally single/double quoted, with blank
 lines and full-line comments. It never sources the file or expands shell
 content; extra/duplicate assignments and files over 4 KiB fail closed. Existing
@@ -169,6 +168,29 @@ JSON credential files remain supported when their path is configured, and
 Telegram queue schema 1 is unchanged. The monitor is the only changed reader;
 Matrix, Hermes, relay, gateway, broker and FlowForge contracts are unchanged.
 The updated 38 monitoring tests and two Matrix status-listener tests passed.
+
+Activation on 2026-11-25, explicitly authorized by the operator: the staged
+configuration sent one `CRITICAL: TEST delivery` and one `RECOVERED: TEST
+delivery` message. Both returned confirmed Telegram API acknowledgments.
+Repeating the problem phase made zero send requests, and the isolated test
+queue ended empty. Message payloads contained the fixed synthetic label and
+no token. The accepted configuration was then applied to the monitor, retaining
+Matrix settings. One real `homelab-monitor.service` run succeeded (exit 0): all
+18 checks were healthy, Telegram recorded 18 check histories, and both Telegram
+and Matrix queues were empty. The existing five-minute timer is active. No
+application services were restarted. No real health transition occurred during
+this run, so production alert/recovery behavior remains covered by the
+synthetic delivery test and offline transition tests. Operator observation
+of message arrival remains unrecorded.
+
+BotFather still reports group joining enabled; inline mode is disabled.
+Activation proceeded with the sender restricted to the single configured
+private chat and no inbound processing. Group joining should still be disabled
+in BotFather; the fixed destination is enforced independently of that setting.
+Private evidence is retained in ignored
+`data/monitoring/telegram-live-evidence.json`; the pre-activation configuration
+is backed up as `data/monitoring/telegram-pre-enable-config.json`. Tokens remain
+only in the private env file; enabled/bot/recipient settings are tracked.
 
 Backrest currently has authentication disabled. If authentication is enabled or the API changes, its check will report an error until the monitor is updated. Check details deliberately omit API response bodies and raw exceptions to avoid logging secrets.
 
