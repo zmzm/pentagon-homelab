@@ -34,13 +34,13 @@ class TelegramTransport(unittest.TestCase):
             result = telegram.send(TOKEN, CONFIG['chat_id'], 'safe summary')
         return result, build.return_value.open.call_args.args[0]
 
-    def test_confirmed_send_has_fixed_endpoint_destination_and_no_formatting(self):
+    def test_confirmed_send_has_fixed_endpoint_destination_and_html_mode(self):
         result, request = self.call({'ok': True, 'result': {
             'message_id': 7, 'chat': {'id': 654321, 'type': 'private'}}})
         self.assertEqual(result, ('confirmed', 0))
         self.assertEqual(request.full_url, 'https://api.telegram.org/bot' + TOKEN + '/sendMessage')
         self.assertEqual(json.loads(request.data), {
-            'chat_id': '654321', 'text': 'safe summary',
+            'chat_id': '654321', 'text': 'safe summary', 'parse_mode': 'HTML',
             'link_preview_options': {'is_disabled': True}, 'protect_content': True})
 
     def test_only_explicit_rate_rejection_is_retryable(self):
@@ -89,6 +89,40 @@ class TelegramState(unittest.TestCase):
         self.assertNotIn(TOKEN, json.dumps(self.state))
         self.assertLess(len(text), 4096)
         self.assertTrue(telegram.valid_summary(self.state['pending'][-1]['summary']))
+
+    def test_html_groups_severities_in_priority_order_with_icons_and_hidden_reference(self):
+        telegram.enqueue(self.state, ['WARNING [http:private] private',
+                                     'RECOVERED [backup] private',
+                                     'CRITICAL [disk] private',
+                                     'CRITICAL [container:private] private',
+                                     'CRITICAL [container:other] private'], {}, 1000)
+        text = telegram.message_text(self.state['pending'][-1])
+        self.assertIn('🏠 <b>Homelab monitor</b>', text)
+        self.assertIn('🚨 <b>Critical · 3 checks</b>', text)
+        self.assertIn('🐳 Containers × 2', text)
+        self.assertIn('⚠️ <b>Warning · 1 check</b>', text)
+        self.assertIn('✅ <b>Recovered · 1 check</b>', text)
+        self.assertEqual(text.count('<blockquote>'), 3)
+        self.assertLess(text.index('Critical'), text.index('Warning'))
+        self.assertLess(text.index('Warning'), text.index('Recovered'))
+        self.assertIn('<tg-spoiler>Reference: ', text)
+        self.assertNotIn('private', text)
+
+    def test_html_escapes_reference_and_rejects_injected_summary(self):
+        item = {**self.state['pending'][0], 'id': '<b>unsafe&reference</b>'}
+        self.assertIn('&lt;b&gt;unsafe&amp;reference&lt;/b&gt;', telegram.message_text(item))
+        item['summary'] = 'CRITICAL: <a href="https://private.test">Disk space</a> (1)'
+        with self.assertRaises(ValueError):
+            telegram.message_text(item)
+
+    def test_timestamp_uses_warsaw_daylight_saving_and_test_title_is_explicit(self):
+        import datetime
+        item = self.state['pending'][0]
+        for month, offset, zone in ((1, '13:00', 'CET'), (7, '14:00', 'CEST')):
+            item['created_at'] = datetime.datetime(2026, month, 1, 12, tzinfo=datetime.timezone.utc).timestamp()
+            self.assertIn(offset + ' ' + zone, telegram.message_text(item))
+        telegram.enqueue(self.state, ['CRITICAL [delivery-test] private'], {}, 1000)
+        self.assertIn('🧪 <b>Homelab monitor · Test</b>', telegram.message_text(self.state['pending'][-1]))
 
     def test_claim_precedes_send_and_success_is_not_repeated(self):
         def send(*args):
@@ -244,7 +278,8 @@ class MonitorIntegration(unittest.TestCase):
                     self.assertEqual(monitor.run_monitor(config, root), 0)
             self.assertEqual(matrix.call_count, 3)
             self.assertEqual(send.call_count, 3)
-            self.assertIn('RECOVERED: Disk space', send.call_args.args[2])
+            self.assertIn('✅ <b>Recovered', send.call_args.args[2])
+            self.assertIn('💾 Disk space', send.call_args.args[2])
             self.assertNotIn(TOKEN, str(send.call_args_list[0].args[2]))
             self.assertEqual(json.loads((root / 'state.json').read_text())['pending'], [])
 
@@ -349,8 +384,9 @@ class SyntheticAlertCommand(unittest.TestCase):
                         self.assertEqual(verify.main(), 0)
             collect.assert_not_called()
             self.assertEqual(send.call_count, 2)
-            self.assertIn('CRITICAL: TEST delivery', send.call_args_list[0].args[2])
-            self.assertIn('RECOVERED: TEST delivery', send.call_args_list[1].args[2])
+            self.assertIn('🚨 <b>Critical', send.call_args_list[0].args[2])
+            self.assertIn('✅ <b>Recovered', send.call_args_list[1].args[2])
+            self.assertTrue(all('🧪 TEST delivery' in call.args[2] for call in send.call_args_list))
             self.assertFalse((root / 'state.json').exists())
 
     def test_production_state_path_is_rejected(self):

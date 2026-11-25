@@ -32,7 +32,8 @@ A problem produces a message on first detection or severity change. Unchanged pr
 Telegram delivery is **enabled** alongside Matrix as of 2026-11-25 following
 operator authorization. Telegram acknowledged the labeled synthetic problem and
 recovery messages; a repeated problem sent no duplicate. Recipient observation
-of arrival has not been recorded. The existing monitor timer remains active. Keep `notification.type`, its Matrix credentials and `allowed_users`
+of arrival has not been recorded. The existing monitor timer remains active.
+Keep `notification.type`, its Matrix credentials and `allowed_users`
 unchanged until delivery is accepted; Matrix retirement is a separate task.
 
 Use a new notification bot, separate from Hermes. The sender calls only HTTPS
@@ -44,9 +45,14 @@ delivery. HTTP redirects are refused. The token's bot ID must match `bot_id`.
 Telegram receives fixed severity/category labels and counts, an original
 timestamp and a batch ID. Free-text check details, container/endpoint names,
 paths, URLs and provider errors are omitted. Container and endpoint alerts are
-grouped; details remain in the local journal and Matrix. Messages use plain
-text, disable link previews, request content protection, and remain below 4096
-characters. Bot chats do not provide end-to-end encryption.
+grouped; details remain in the local journal and Matrix. Messages use Telegram
+HTML: bold severity headings, category icons, grouped block quotes, an original
+Europe/Warsaw timestamp (CET/CEST), and a tap-to-reveal reference spoiler.
+Critical entries appear first, followed by warnings and recoveries. Synthetic
+alerts carry an explicit test title. Link previews stay disabled, content
+protection is requested, and messages remain below 4096 UTF-16 units even before
+HTML parsing. Bot chats do not provide end-to-end encryption. Formatting
+reference: [Telegram HTML style](https://core.telegram.org/bots/api#html-style).
 
 #### Setup and acceptance (rebuild or replacement bot)
 
@@ -187,6 +193,18 @@ BotFather still reports group joining enabled; inline mode is disabled.
 Activation proceeded with the sender restricted to the single configured
 private chat and no inbound processing. Group joining should still be disabled
 in BotFather; the fixed destination is enforced independently of that setting.
+Formatting update on 2026-11-25: Telegram acknowledged one labeled HTML
+preview containing critical, warning and recovery sections. The isolated
+preview queue ended empty; production alert history and Matrix state were
+preserved. All 41 monitoring tests and two Matrix status-listener tests passed.
+Only Telegram presentation and the `sendMessage` parse mode changed. Existing
+schema-1 summaries and credential files remain readable; eligible queued
+batches use the current renderer. Held `sending`/`uncertain` records retain
+their existing recovery rules. Matrix and all other consumers are unchanged.
+The host timer loads the updated sender on its next invocation; no service
+restart is required. Private preview evidence is under
+`data/monitoring/telegram-test-format-20261125/`.
+
 Private evidence is retained in ignored
 `data/monitoring/telegram-live-evidence.json`; the pre-activation configuration
 is backed up as `data/monitoring/telegram-pre-enable-config.json`. Tokens remain

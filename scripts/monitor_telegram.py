@@ -1,5 +1,6 @@
 """Outbound-only monitoring summaries; never forward check details to Telegram."""
 import datetime
+import html
 import json
 import math
 import os
@@ -9,6 +10,7 @@ import stat
 import urllib.error
 import urllib.request
 import uuid
+from zoneinfo import ZoneInfo
 
 MAX_PENDING = 100
 MAX_ATTEMPTS = 3
@@ -16,6 +18,12 @@ LABELS = {'disk': 'Disk space', 'backup': 'Backups',
           'backup:matrix-database': 'Database backup', 'backup:recovery': 'Recovery verification',
           'docker': 'Container engine', 'delivery-test': 'TEST delivery'}
 STATUSES = {'queued', 'sending', 'uncertain', 'blocked'}
+SEVERITIES = (('CRITICAL', '🚨', 'Critical'), ('WARNING', '⚠️', 'Warning'),
+              ('RECOVERED', '✅', 'Recovered'))
+CATEGORY_ICONS = {'Disk space': '💾', 'Backups': '🗄️', 'Database backup': '🗃️',
+                  'Recovery verification': '🛟', 'Container engine': '🐳',
+                  'Containers': '🐳', 'Service endpoints': '🌐',
+                  'Health check': '🩺', 'TEST delivery': '🧪'}
 
 
 class QueueFull(RuntimeError):
@@ -91,8 +99,29 @@ def summary(messages):
 
 
 def message_text(item):
-    stamp = datetime.datetime.fromtimestamp(item['created_at'], datetime.timezone.utc).isoformat(timespec='seconds')
-    return f'Homelab alerts [{item["id"]}]\n{stamp}\n{item["summary"]}\nDetails: local journal / Matrix.'
+    """Render only validated categories; keep the stored summary format unchanged."""
+    if not valid_summary(item['summary']):
+        raise ValueError('Invalid Telegram summary')
+    stamp = datetime.datetime.fromtimestamp(item['created_at'], ZoneInfo('Europe/Warsaw'))
+    title = '🧪 <b>Homelab monitor · Test</b>' if 'TEST delivery' in item['summary'] else '🏠 <b>Homelab monitor</b>'
+    parts = [title, '🕒 <i>' + html.escape(stamp.strftime('%d %b %Y · %H:%M %Z')) + '</i>']
+    rows = [re.fullmatch(r'(CRITICAL|WARNING|RECOVERED): (.+) \(([0-9]+)\)', line).groups()
+            for line in item['summary'].splitlines()]
+    for level, icon, label in SEVERITIES:
+        entries = [(category, int(count)) for severity, category, count in rows if severity == level]
+        if not entries:
+            continue
+        total = sum(count for _, count in entries)
+        heading = f'{icon} <b>{label} · {total} ' + ('check' if total == 1 else 'checks') + '</b>'
+        lines = [CATEGORY_ICONS[category] + ' ' + html.escape(category)
+                 + (f' × {count}' if count > 1 else '') for category, count in entries]
+        parts.extend(['', heading, '<blockquote>' + '\n'.join(lines) + '</blockquote>'])
+    parts.extend(['', '📋 <i>Details in Matrix or the local journal.</i>',
+                  '<tg-spoiler>Reference: ' + html.escape(item['id']) + '</tg-spoiler>'])
+    text = '\n'.join(parts)
+    if len(text.encode('utf-16-le')) // 2 > 4096:
+        raise ValueError('Telegram message is too large')
+    return text
 
 
 def load_state(path, config):
@@ -157,7 +186,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def send(token, chat_id, text):
     """Return confirmed/rejected/uncertain evidence, never raw provider errors."""
     request = urllib.request.Request('https://api.telegram.org/bot' + token + '/sendMessage',
-        data=json.dumps({'chat_id': chat_id, 'text': text,
+        data=json.dumps({'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML',
                          'link_preview_options': {'is_disabled': True}, 'protect_content': True}).encode(),
         headers={'Content-Type': 'application/json'}, method='POST')
     http_status = 200
