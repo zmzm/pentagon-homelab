@@ -288,7 +288,8 @@ print('PASS: isolated home passes native CLI ownership/permissions checks as obs
             if not live:
                 record['telegram'] = docker('exec', '--user', '10000:10000', name,
                     PYTHON, '/integration/verify_hermes_telegram.py', offline_diagnostic=True)
-                print('PASS: offline native Telegram configuration, intake and slash access tests', flush=True)
+                print('PASS: offline native Telegram configuration, intake and slash access tests; '
+                      'includes known-gap characterization, not deployment clearance (see evidence)', flush=True)
             record['http_guard_check'] = docker('exec', '-i', '--user', '10000:10000', name,
                 PYTHON, '-', input=GUARD_CHECK, offline_diagnostic=not live)
             print(record['http_guard_check'], flush=True)

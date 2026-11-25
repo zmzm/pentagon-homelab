@@ -147,6 +147,14 @@ disabled, group privacy enabled and owning-account two-step verification enabled
 These are dated observations and operator attestations, not live Telegram API
 acceptance. See the [TG-02 verification report](../../reports/2026-11-25-hermes-telegram-tg02.md).
 
+TG-03 review reproduced two additional rollout blockers: Compose accepts a
+wildcard user list that opens native authorization, and group callback
+authorization does not apply the empty group-message sender gate. The expanded
+offline tests deliberately characterize these gaps; a passing run does not
+clear them. See the [TG-03 security review](../../reports/2026-11-25-hermes-telegram-tg03.md)
+for evidence, required follow-up and the retained pairing/bytecode prerequisites.
+Resolve the findings before executing the TG-04 deployment steps below.
+
 Validate locally from the repository root:
 
 ```bash
@@ -157,7 +165,7 @@ python3 scripts/verify_hermes_skills.py
 
 The last command uses a disposable container with no network, fixture credentials,
 an isolated home and read-only proposed config/plugin/bridge mounts. It checks
-CLI/Matrix/Telegram/cron effective schemas and six native Telegram cases without
+CLI/Matrix/Telegram/cron effective schemas and fourteen native Telegram cases without
 starting an adapter or making model/Telegram requests. Private detailed evidence
 is written to ignored `reports/hermes-skills-static-evidence.json`. The installed
 image's cached Python bytecode failed with `bad marshal data`; offline validation
