@@ -26,6 +26,10 @@ services:
       TELEGRAM_WEBHOOK_URL: ""
       GATEWAY_ALLOWED_USERS: ""
       GATEWAY_ALLOW_ALL_USERS: "false"
+      # Read-only startup policy applies in CLI and supervised gateway processes.
+      PYTHONPATH: /integration/runtime-guard:/opt/hermes
+      # Ignore damaged image bytecode; the cache is fresh on each container start.
+      PYTHONPYCACHEPREFIX: /tmp/hermes-pycache
       HERMES_TIMEZONE: Europe/Warsaw
       GATEWAY_URL: http://pentagon-gateway:8080
       GATEWAY_TOKEN: ${GATEWAY_TOKEN:?set random 32+ character token}
@@ -34,8 +38,10 @@ services:
       - ./config.yaml:/opt/data/config.yaml:ro
       - ./SOUL.md:/opt/data/SOUL.md:ro
       - ./gateway_mcp.py:/integration/gateway_mcp.py:ro
+      - ./runtime_guard:/integration/runtime-guard:ro
       - ./skills:/opt/hermes-curated-skills:ro
       - ./plugins/homelab-skill-tools:/opt/data/plugins/homelab-skill-tools:ro
+    tmpfs: ["/tmp/hermes-pycache:uid=10000,gid=10000,mode=0700,size=128m"]
     networks: [agent, egress]
     depends_on:
       pentagon-gateway:

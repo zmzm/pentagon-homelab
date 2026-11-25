@@ -74,6 +74,8 @@ mcp_servers:
     env:
       GATEWAY_URL: ${GATEWAY_URL}
       GATEWAY_TOKEN: ${GATEWAY_TOKEN}
+      # Native MCP filters the parent environment; retain the disposable cache.
+      PYTHONPYCACHEPREFIX: ${PYTHONPYCACHEPREFIX}
     timeout: 40
     tools:
       include: [knowledge_search, flowforge_list_workflows, flowforge_list_tasks, flowforge_get_run, flowforge_run, flowforge_list_projects, flowforge_get_project, flowforge_get_catalog, flowforge_get_project_status, flowforge_doctor, flowforge_preview_sync, homelab_list_services, homelab_inspect_service, homelab_get_logs, homelab_restart_service]

@@ -8,13 +8,14 @@ import os
 import sys
 import unittest
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from gateway.authz_mixin import GatewayAuthorizationMixin
 from gateway.config import Platform, load_gateway_config
 from gateway.slash_access import policy_for_source
 from gateway.session import SessionSource
-from plugins.platforms.telegram.adapter import TelegramAdapter
+from plugins.platforms.telegram.adapter import TelegramAdapter, _redact_telegram_error_text
 from telegram import Chat, Message, Update, User
 
 
@@ -89,6 +90,91 @@ class TelegramConfigurationTests(unittest.TestCase):
         self.adapter._build_triggered_event.assert_not_called()
         self.adapter._enqueue_text_event.assert_not_called()
 
+    def test_denied_intake_never_builds_dispatches_or_downloads(self):
+        # Exercise real intake handlers, not just their authorization predicate.
+        # Commands need a bot-addressing decision first; it is not an auth gate.
+        self.adapter._should_process_message = Mock(return_value=True)
+        self.adapter._build_triggered_event = AsyncMock()
+        self.adapter._build_message_event = Mock()
+        self.adapter._enqueue_text_event = Mock()
+        self.adapter.handle_message = AsyncMock()
+        self.adapter._cache_observed_media = AsyncMock()
+        for kind, user_id in (('private', 654321), ('group', 123456),
+                              ('supergroup', 123456), ('channel', 123456)):
+            for handler in ('_handle_text_message', '_handle_command',
+                            '_handle_location_message', '_handle_media_message'):
+                with self.subTest(kind=kind, handler=handler):
+                    message = self.message(user_id, kind)
+                    update = Update(1, channel_post=message) if kind == 'channel' else Update(1, message=message)
+                    asyncio.run(getattr(self.adapter, handler)(update, None))
+        self.adapter._build_triggered_event.assert_not_called()
+        self.adapter._build_message_event.assert_not_called()
+        self.adapter._enqueue_text_event.assert_not_called()
+        self.adapter.handle_message.assert_not_called()
+        self.adapter._cache_observed_media.assert_not_called()
+
+    def test_unknown_inline_query_does_not_read_catalog(self):
+        query = SimpleNamespace(from_user=User(654321, 'Fixture', False), answer=AsyncMock())
+        with patch('plugins.platforms.telegram.inline_picker.build_inline_results') as catalog:
+            asyncio.run(self.adapter._handle_inline_query(SimpleNamespace(inline_query=query), None))
+        catalog.assert_not_called()
+        self.assertEqual(query.answer.await_args.args, ([],))
+
+    def test_unknown_callbacks_do_not_dispatch_or_consume_pending_state(self):
+        self.adapter._handle_model_picker_callback = AsyncMock()
+        self.adapter._handle_choice_picker_callback = AsyncMock()
+        self.adapter._approval_state = {7: 'fixture-session'}
+        self.adapter._slash_confirm_state = {'fixture': 'fixture-session'}
+        self.adapter._clarify_state = {'fixture': 'fixture-session'}
+        for data in ('mp:fixture', 'cp:fixture', 'ea:once:7',
+                     'sc:once:fixture', 'cl:fixture:0', 'update_prompt:y'):
+            with self.subTest(data=data):
+                query = SimpleNamespace(data=data, from_user=User(654321, 'Fixture', False),
+                                        message=self.message(), answer=AsyncMock())
+                asyncio.run(self.adapter._handle_callback_query(SimpleNamespace(callback_query=query), None))
+                query.answer.assert_awaited_once()
+        self.adapter._handle_model_picker_callback.assert_not_called()
+        self.adapter._handle_choice_picker_callback.assert_not_called()
+        self.assertEqual(self.adapter._approval_state, {7: 'fixture-session'})
+        self.assertEqual(self.adapter._slash_confirm_state, {'fixture': 'fixture-session'})
+        self.assertEqual(self.adapter._clarify_state, {'fixture': 'fixture-session'})
+
+    def test_unknown_dm_ignore_does_not_create_pairing_request(self):
+        self.runner.pairing_store = Mock()
+        self.runner.pairing_store.is_approved.return_value = False
+        self.adapter.gateway_runner = self.runner
+        self.adapter._build_triggered_event = AsyncMock()
+        asyncio.run(self.adapter._handle_text_message(Update(1, message=self.message(654321)), None))
+        self.adapter._build_triggered_event.assert_not_called()
+        # Approval lookup is permitted; no native pairing store mutation occurs.
+        self.assertEqual(self.runner.pairing_store.mock_calls, [])
+
+    def test_blocked_intake_logs_exclude_message_and_credentials(self):
+        message = Message(message_id=1, date=datetime.now(timezone.utc),
+                          chat=Chat(654321, 'private'), from_user=User(654321, 'Fixture', False),
+                          text='PRIVATE-FIXTURE-BODY ' + os.environ['TELEGRAM_BOT_TOKEN'])
+        with self.assertLogs('plugins.platforms.telegram.adapter', level='WARNING') as logs:
+            asyncio.run(self.adapter._handle_text_message(Update(1, message=message), None))
+        for secret in ('PRIVATE-FIXTURE-BODY', os.environ['TELEGRAM_BOT_TOKEN']):
+            self.assertNotIn(secret, '\n'.join(logs.output))
+
+    def test_transport_error_redacts_fixture_bot_token(self):
+        token = '123456789:AAExampleTokenValueForOfflineFixture123'
+        with patch.dict(os.environ, {'TELEGRAM_BOT_TOKEN': token}):
+            safe = _redact_telegram_error_text(RuntimeError('https://api.telegram.org/bot' + token + '/getUpdates'))
+        self.assertNotIn(token, safe)
+
+    def test_group_callbacks_rejected_for_allowlisted_sender(self):
+        self.assertFalse(self.adapter._is_user_authorized_from_message(self.message(chat_type='group')))
+        for kind in ('group', 'supergroup', 'forum', 'channel', None):
+            with self.subTest(kind=kind):
+                self.assertFalse(self.adapter._is_callback_user_authorized(
+                    '123456', chat_id='-100123456', chat_type=kind))
+
+    def test_ambient_wildcard_cannot_expand_startup_allowlist(self):
+        with patch.dict(os.environ, {'TELEGRAM_ALLOWED_USERS': '*'}):
+            self.assertFalse(self.adapter._is_user_authorized_from_message(self.message(654321)))
+
     def test_native_slash_commands_do_not_restore_admin_tools(self):
         source = SessionSource(platform=Platform.TELEGRAM, chat_id='123456',
                                chat_type='dm', user_id='123456')
@@ -100,14 +186,53 @@ class TelegramConfigurationTests(unittest.TestCase):
                         'config', 'tools', 'model', 'approve', 'skills'):
             self.assertFalse(policy.can_run(source.user_id, command), command)
 
-    def test_retained_pairing_is_an_additional_grant(self):
-        # Records are a native authorization UNION, even with an explicit allowlist.
-        # Keep this limitation visible: deployment must check both pairing layouts.
+    def test_retained_pairing_cannot_expand_allowlist(self):
         self.runner.pairing_store = Mock()
         self.runner.pairing_store.is_approved.return_value = True
         source = SessionSource(platform=Platform.TELEGRAM, chat_id='654321',
                                chat_type='dm', user_id='654321')
-        self.assertTrue(self.runner._is_user_authorized(source))
+        self.assertFalse(self.runner._is_user_authorized(source))
+        self.assertFalse(self.adapter._is_user_authorized_from_message(self.message(654321)))
+        self.assertFalse(self.adapter._is_callback_user_authorized('654321'))
+
+    def test_alternate_grants_cannot_expand_telegram_but_matrix_is_unchanged(self):
+        self.runner.pairing_store = Mock()
+        self.runner.pairing_store.is_approved.return_value = True
+        with patch.dict(os.environ, {'TELEGRAM_ALLOW_ALL_USERS': 'true',
+                                    'GATEWAY_ALLOW_ALL_USERS': 'true', 'GATEWAY_ALLOWED_USERS': '*'}):
+            source = SessionSource(platform=Platform.TELEGRAM, chat_id='654321',
+                                   chat_type='dm', user_id='654321', role_authorized=True)
+            self.assertFalse(self.runner._is_user_authorized(source))
+            matrix = SessionSource(platform=Platform.MATRIX, chat_id='!fixture:server',
+                                   chat_type='dm', user_id='@fixture:server')
+            self.assertTrue(self.runner._is_user_authorized(matrix))
+
+    def test_allowed_private_callback_still_reaches_native_picker(self):
+        self.adapter._handle_model_picker_callback = AsyncMock()
+        query = SimpleNamespace(data='mp:fixture', from_user=User(123456, 'Fixture', False),
+                                message=self.message(), answer=AsyncMock())
+        asyncio.run(self.adapter._handle_callback_query(SimpleNamespace(callback_query=query), None))
+        self.adapter._handle_model_picker_callback.assert_awaited_once_with(query, 'mp:fixture', '123456')
+
+    def test_group_callbacks_never_dispatch_or_claim_retained_prompts(self):
+        for kind in ('group', 'supergroup', 'channel'):
+            for data in ('mp:fixture', 'cp:fixture', 'ea:once:7', 'sc:once:fixture',
+                         'cl:fixture:0', 'update_prompt:y'):
+                with self.subTest(kind=kind, data=data):
+                    self.adapter._handle_model_picker_callback = AsyncMock()
+                    self.adapter._handle_choice_picker_callback = AsyncMock()
+                    self.adapter._approval_state = {7: 'fixture-session'}
+                    self.adapter._slash_confirm_state = {'fixture': 'fixture-session'}
+                    self.adapter._clarify_state = {'fixture': 'fixture-session'}
+                    query = SimpleNamespace(data=data, from_user=User(123456, 'Fixture', False),
+                                            message=self.message(chat_type=kind), answer=AsyncMock())
+                    asyncio.run(self.adapter._handle_callback_query(SimpleNamespace(callback_query=query), None))
+                    self.adapter._handle_model_picker_callback.assert_not_called()
+                    self.adapter._handle_choice_picker_callback.assert_not_called()
+                    query.answer.assert_awaited_once()
+                    self.assertEqual(self.adapter._approval_state, {7: 'fixture-session'})
+                    self.assertEqual(self.adapter._slash_confirm_state, {'fixture': 'fixture-session'})
+                    self.assertEqual(self.adapter._clarify_state, {'fixture': 'fixture-session'})
 
 
 if __name__ == '__main__':
