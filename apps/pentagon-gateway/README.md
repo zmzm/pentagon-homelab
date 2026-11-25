@@ -4,14 +4,53 @@ Pentagon Gateway is the Hermes tool gateway. FlowForge is the separate task runn
 its workflow API and tool names retain their existing names.
 
 Portable REST boundary for Knowledge Router, existing FlowForge workflows and constrained
-Docker operations. Uses Node.js 24+ standard library only. Hermes connects through the
+Docker operations. Uses the Node.js 24+ standard library at runtime. Hermes connects through the
 thin MCP adapter in `../hermes/gateway_mcp.py`; other runtimes can use the same HTTP API.
 
 See [deployment, API, policy and acceptance documentation](../hermes/README.md).
 
+## Development
+
+Run these commands from `apps/pentagon-gateway` with Node.js 24+ and npm:
+
 ```bash
-npm test
+npm ci
+npm run check
 ```
+
+`check` runs [ESLint](https://eslint.org/docs/latest/use/configure/configuration-files),
+[Prettier's format check](https://prettier.io/docs/configuration), and the existing
+`node:test` suite.
+Use `npm run lint:fix` and `npm run format` to apply fixes, then review the diff.
+`npm test` still runs without installing development tools. Tests use local HTTP
+and Unix sockets and temporary files; real retrieval cases also need the external
+Knowledge Router checkout and report skips when it is unavailable. These checks
+do not exercise deployed services.
+
+The app's conventions are:
+
+- Keep ESM `.mjs` modules, explicit relative import extensions, `node:` imports for
+  built-ins, and `node:test` tests. ESLint uses Node globals, not browser or CommonJS
+  globals, for all JavaScript files.
+- Use Prettier's two-space indentation, semicolons, single quotes, and a 100-column
+  wrapping target. Let the formatter lay out request objects and long expressions.
+- Use braces for every control-flow body, one variable declaration per statement,
+  `const` for bindings that are not reassigned, and strict equality. ESLint's
+  recommended correctness rules also reject unused bindings and undefined names.
+  Prefix intentionally discarded variable bindings with `_`; ESLint rejects using
+  those bindings later.
+- Preserve HTTP/tool field names and persisted record shapes when naming local
+  variables. Keep gateway authorization in `server.mjs`/`operations.mjs`, Docker
+  operations in `broker.mjs`, and Matrix delivery in the relay modules.
+
+For naming, readable decisions, and module extraction, follow the shared
+`common/engineering/references/readability-and-boundaries.md` reference after
+resolving the coding root through the
+[repository procedure](../../docs/engineering.md#shared-guidance-and-provenance).
+Use the existing behavior tests when changing these boundaries; lint and
+formatting alone do not verify approval, recovery, or delivery invariants.
+
+## Components
 
 `src/server.mjs` enforces authentication, validation, permission policy, durable approvals,
 audit and metrics. `src/operations.mjs` delegates knowledge to the existing CLI and workflows
