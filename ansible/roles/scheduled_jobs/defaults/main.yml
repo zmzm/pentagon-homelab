@@ -7,6 +7,8 @@ homelab_scheduled_job_names:
 
 homelab_scheduled_job_scripts:
   - monitor.py
+  - monitor_telegram.py
+  - verify_monitor_telegram.py
   - matrix_status.py
   - backup_matrix_db.py
   - recovery_test.py

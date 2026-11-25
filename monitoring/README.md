@@ -27,6 +27,213 @@ Alerts remain in the journal too. A durable queue in the saved state retries fai
 
 A problem produces a message on first detection or severity change. Unchanged problems repeat after six hours. Recovery produces a `RECOVERED` message. Alert state persists in `/var/lib/homelab-monitor/state.json`, mode 0600; it survives reboots. Each run also logs a check summary.
 
+### Telegram migration (TG-05, enabled with Matrix retained)
+
+Telegram delivery is **enabled** alongside Matrix as of 2026-11-25 following
+operator authorization. Telegram acknowledged the labeled synthetic problem and
+recovery messages; a repeated problem sent no duplicate. Recipient observation
+of arrival has not been recorded. The existing monitor timer remains active.
+Keep `notification.type`, its Matrix credentials and `allowed_users`
+unchanged until delivery is accepted; Matrix retirement is a separate task.
+
+Use a new notification bot, separate from Hermes. The sender calls only HTTPS
+`sendMessage` at `api.telegram.org`, with no inbound listener, webhook, polling,
+model invocation or tool/approval access. One positive numeric private-chat ID
+is allowed; usernames, groups, channels and migration responses cannot retarget
+delivery. HTTP redirects are refused. The token's bot ID must match the private `TELEGRAM_BOT_ID`.
+
+Telegram receives fixed severity/category labels and counts, an original
+timestamp and a batch ID. Free-text check details, container/endpoint names,
+paths, URLs and provider errors are omitted. Container and endpoint alerts are
+grouped; details remain in the local journal and Matrix. Messages use Telegram
+HTML: bold severity headings, category icons, grouped block quotes, an original
+Europe/Warsaw timestamp (CET/CEST), and a tap-to-reveal reference spoiler.
+Critical entries appear first, followed by warnings and recoveries. Synthetic
+alerts carry an explicit test title. Link previews stay disabled, content
+protection is requested, and messages remain below 4096 UTF-16 units even before
+HTML parsing. Bot chats do not provide end-to-end encryption. Formatting
+reference: [Telegram HTML style](https://core.telegram.org/bots/api#html-style).
+
+#### Setup and acceptance (rebuild or replacement bot)
+
+1. Create a **new monitoring bot** in BotFather, disable group joining and inline
+   mode, and start its private chat from the intended recipient account. Confirm
+   that its bot ID (the token's numeric prefix) differs from Hermes's bot ID.
+   Keep the token out of chat, Git, Trello, shell arguments and logs.
+2. Create its private credential file, refusing to overwrite an existing file:
+
+   ```bash
+   sudo install -d -m 0700 data/monitoring
+   sudo python3 -c 'import os; from pathlib import Path; os.umask(0o077); Path("data/monitoring/telegram.env").open("x").write("TELEGRAM_BOT_TOKEN=\nTELEGRAM_BOT_ID=\nTELEGRAM_CHAT_ID=\n")'
+   sudoedit data/monitoring/telegram.env
+   ```
+
+   Fill `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_ID` (the token's numeric prefix),
+   and `TELEGRAM_CHAT_ID` (the recipient's numeric private user ID). These values
+   stay in the ignored env file. The file
+   must be regular, owned by the monitor runner (root for the installed unit)
+   and mode 0600. Restore existing credentials from backup when rebuilding.
+   Hermes must not receive this credential.
+3. Copy `monitoring/config.json` to private
+   `data/monitoring/telegram-staged.json` (root-owned, mode 0600). In the
+   **staged copy**, set `notification.telegram.enabled` to `true` and omit
+   `bot_id` and `chat_id`; they are loaded from the private file. Keep
+   `credentials_file` as
+   `data/monitoring/telegram.env`. Keep delivery disabled during bot replacement.
+
+After authorizing test messages, run these from the repository root using the
+same isolated state directory:
+
+```bash
+sudo python3 -B scripts/verify_monitor_telegram.py \
+  --config data/monitoring/telegram-staged.json \
+  --state-dir /var/lib/telegram-test-monitor --phase problem
+# Repeat the problem command: it should send no second message.
+sudo python3 -B scripts/verify_monitor_telegram.py \
+  --config data/monitoring/telegram-staged.json \
+  --state-dir /var/lib/telegram-test-monitor --phase recovery
+```
+
+Expect one `CRITICAL: TEST delivery` and one `RECOVERED: TEST delivery`, from the
+new bot in the intended private chat. Confirm arrival and no sensitive content
+in messages or command output. This command collects no real checks, sends no
+Matrix events, and uses separate check/reminder state. An empty test queue and
+exit 0 establish API acknowledgment; operator observation establishes arrival.
+If a test fails, inspect its private retained state before continuing. Do not
+reset an ambiguous send to retry it.
+
+After acceptance and rollout authorization, apply the staged Telegram settings
+to the deployed `monitoring/config.json`; the timer reads them on its next run,
+without a unit restart. On rebuilt hosts install the updated `scheduled_jobs`
+role first, including `monitor_telegram.py` and the test command. The tracked
+configuration contains only the enabled setting and private credential-file
+path. Restore the env file with its token and IDs before enabling the timer on
+a rebuilt host. Keep Matrix active and verify both channels on the first
+real alert/recovery cycle. Offline tests do not establish live acceptance.
+
+#### Delivery state, retries and rollback
+
+The separate root-only `/var/lib/homelab-monitor/telegram.json` (schema 1) holds
+Telegram check/reminder history and up to 100 batches. Records bind to the bot
+and recipient IDs; changing either requires operator review of the old queue.
+Missing state starts a new history. Malformed, unknown or mismatched state stops
+Telegram delivery while Matrix continues. A full queue stops advancing Telegram
+reminder history and reports failure; eligible queued work still drains. Matrix
+and journal alerts continue. This capacity limit can defer or miss a transient
+Telegram change during a long outage; consult Matrix for the full history.
+
+Each run sends at most one batch with a ten-second network timeout and 64 KiB
+response limit. Confirmed messages leave the queue. Only an explicit Telegram
+`ok:false`, error 429 with valid `retry_after` retries automatically: at most
+three total attempts, on later timer runs, respecting the server delay and a
+minimum exponential delay with jitter. Other explicit client rejections become
+`blocked`. Timeouts, redirects, 408/5xx, malformed or wrong-destination responses
+become `uncertain`. Both held statuses require review and allow later alerts
+through. Pending/held batches cause a nonzero monitor exit and safe journal
+counts. Raw provider errors, URLs and tokens are never included in diagnostics.
+
+A `sending` claim is fsynced before dispatch; interrupted claims load as
+`uncertain`. A crash after remote success but before confirmation is saved
+therefore suppresses replay. Telegram `sendMessage` has no client idempotency
+key; local batch IDs cannot guarantee exactly-once delivery. API acknowledgment
+does not mean the user read the message. Protocol references:
+[sendMessage](https://core.telegram.org/bots/api#sendmessage),
+[rate-limit response](https://core.telegram.org/bots/api#responseparameters).
+
+To recover, disable Telegram, let the current monitor finish, and back up its
+private state. Inspect the recipient's chat by batch ID/timestamp. Preserve
+uncertain evidence; do not change `sending`/`uncertain` to `queued` without an
+explicit operator decision about duplicate risk. Correct rejected credentials
+or destinations before any manual resend. Never delete state to clear failure.
+An intentional bot/recipient replacement needs a separate accepted state history.
+
+Rollback sets `notification.telegram.enabled` to `false`; Matrix continues and
+Telegram state is retained. For code rollback restore `monitor.py` and its
+configuration together. Old Matrix code ignores the separate Telegram file;
+retain it for re-enabling this version. The Matrix status listener still reads
+the original notification fields and `status.json`. No gateway, MCP, broker,
+relay, FlowForge or native Hermes record changes. Main monitor invocations share
+a nonblocking file lock to exclude manual overlap. JSON publication now fsyncs
+the file and directory, within host filesystem guarantees; local persistence and
+remote delivery remain separate effects.
+
+Initial TG-05 validation on 2026-11-25: 36 monitoring tests, two Matrix status-listener
+tests and 17 Ansible tests passed locally. `ansible-playbook scheduled-jobs.yml
+--syntax-check` passed with an unrelated installed WinRM plugin warning;
+`git diff --check` passed. HTTP boundaries use fixtures: no bot was created,
+no Telegram/Matrix messages were sent, and no services were restarted. Telegram
+remained disabled pending separate bot setup and live acceptance.
+
+Follow-up on 2026-11-25: a root-owned 0600 `telegram.env` is populated.
+`getMe` verified the new bot identity differs from Hermes; `getChat` verified
+the intended private recipient is accessible. Inline mode is disabled, but
+BotFather still allows group joining: disable it before rollout. A private
+`data/monitoring/telegram-staged.json` was prepared. At that stage Telegram
+delivery remained disabled and no messages had been sent. Env loading reads one literal
+`TELEGRAM_BOT_TOKEN` assignment, optionally single/double quoted, with blank
+lines and full-line comments. It never sources the file or expands shell
+content; extra/duplicate assignments and files over 4 KiB fail closed. Existing
+JSON credential files remain supported when their path is configured, and
+Telegram queue schema 1 is unchanged. The monitor is the only changed reader;
+Matrix, Hermes, relay, gateway, broker and FlowForge contracts are unchanged.
+The updated 38 monitoring tests and two Matrix status-listener tests passed.
+
+Activation on 2026-11-25, explicitly authorized by the operator: the staged
+configuration sent one `CRITICAL: TEST delivery` and one `RECOVERED: TEST
+delivery` message. Both returned confirmed Telegram API acknowledgments.
+Repeating the problem phase made zero send requests, and the isolated test
+queue ended empty. Message payloads contained the fixed synthetic label and
+no token. The accepted configuration was then applied to the monitor, retaining
+Matrix settings. One real `homelab-monitor.service` run succeeded (exit 0): all
+18 checks were healthy, Telegram recorded 18 check histories, and both Telegram
+and Matrix queues were empty. The existing five-minute timer is active. No
+application services were restarted. No real health transition occurred during
+this run, so production alert/recovery behavior remains covered by the
+synthetic delivery test and offline transition tests. Operator observation
+of message arrival remains unrecorded.
+
+BotFather still reports group joining enabled; inline mode is disabled.
+Activation proceeded with the sender restricted to the single configured
+private chat and no inbound processing. Group joining should still be disabled
+in BotFather; the fixed destination is enforced independently of that setting.
+Formatting update on 2026-11-25: Telegram acknowledged one labeled HTML
+preview containing critical, warning and recovery sections. The isolated
+preview queue ended empty; production alert history and Matrix state were
+preserved. All 41 monitoring tests and two Matrix status-listener tests passed.
+Only Telegram presentation and the `sendMessage` parse mode changed. Existing
+schema-1 summaries and credential files remain readable; eligible queued
+batches use the current renderer. Held `sending`/`uncertain` records retain
+their existing recovery rules. Matrix and all other consumers are unchanged.
+The host timer loads the updated sender on its next invocation; no service
+restart is required. Private preview evidence is under
+`data/monitoring/telegram-test-format-20261125/`.
+
+Private evidence is retained in ignored
+`data/monitoring/telegram-live-evidence.json`; the pre-activation configuration
+is backed up as `data/monitoring/telegram-pre-enable-config.json`. Tokens remain
+only in the private env file. The tracked settings now include only the enabled
+flag and the private file path.
+
+Private-ID migration on 2026-11-25: bot and recipient IDs were moved from
+tracked configuration to `TELEGRAM_BOT_ID` and `TELEGRAM_CHAT_ID` in the
+root-owned 0600 `telegram.env`. Both the monitor and synthetic test command
+resolve absent IDs from that private file and validate the effective settings.
+Legacy configurations with explicit IDs and JSON credential files remain
+readable. Explicit configuration IDs take precedence; missing or invalid
+effective IDs fail closed. Private delivery-state schema 1 retains the original
+bot/recipient binding. Tokens, destinations, check history, and Telegram,
+Matrix and status-listener queue files were preserved; live state hashes were
+unchanged during migration. No messages or service restarts were needed.
+All 46 monitoring tests and two Matrix status-listener tests passed.
+
+For code rollback before private-ID support, restore the matching private
+`data/monitoring/telegram-before-private-ids.env` and
+`data/monitoring/telegram-before-private-ids-config.json` as a pair, after
+letting the current monitor finish. Keep delivery state and claims intact.
+Bot/chat IDs remain in earlier published Git commits; this change removes
+them from the current tree without rewriting history. Matrix and the other
+stack consumers require no configuration or record changes.
+
 Backrest currently has authentication disabled. If authentication is enabled or the API changes, its check will report an error until the monitor is updated. Check details deliberately omit API response bodies and raw exceptions to avoid logging secrets.
 
 ## Matrix status command
@@ -81,7 +288,7 @@ sudo systemctl start homelab-monitor.service
 sudo systemctl disable --now homelab-monitor.timer
 ```
 
-`--check` exits 1 if any check is unhealthy. The scheduled service exits 0 when checks complete, even when they find problems; a nonzero service exit means the checker or Matrix delivery failed. Delivery failures leave queued alerts for the next run. Read the journal or saved check state for health results.
+`--check` exits 1 if any check is unhealthy. The scheduled service exits 0 when checks complete and deliveries are acknowledged, even when checks find problems; a nonzero service exit means the checker or delivery needs attention. Matrix failures and explicit Telegram rate limits retain eligible work for later runs; held Telegram outcomes require review. Read the journal or saved check state for health results.
 
 To change thresholds, endpoints, or expected containers, edit `monitoring/config.json`. The next run loads the new config. To change the interval, edit `monitoring/homelab-monitor.timer`, reinstall it, and reload systemd.
 
@@ -111,10 +318,10 @@ The unit runs as root to access Docker and Caddy's CA files. It uses a read-only
 
 ## Validation
 
-Thirteen regression tests cover failed backups followed by future schedules, dry runs, stale backups, recovery, deduplication, reminders, severity escalation, low free space, delivery retry ordering, stable transaction IDs, refusing plaintext in encrypted rooms, and missing/empty/stale/future database dumps:
+Regression tests cover backup health, recovery, reminders, severity escalation, disk thresholds, Matrix retry ordering and stable transactions, encryption refusal, and Telegram projection, destination checks, bounded retries, held uncertainty and crash recovery:
 
 ```bash
-python3 -B -m unittest discover -s scripts -p test_monitor.py -v
+python3 -B -m unittest discover -s scripts -p 'test_monitor*.py' -v
 ```
 
 The live first run passed all 16 checks. A separate configuration and state directory verified a closed local port produces an alert, a repeated failure does not duplicate it, and restoring the real URL produces a recovery message. No production services were stopped. The first scheduled check used about 0.21 seconds of CPU time; idle monitoring has no resident process.

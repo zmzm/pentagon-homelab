@@ -2,6 +2,7 @@
 """Short-lived homelab health checks. Emits state changes and reminders to journald."""
 import argparse
 import datetime
+import fcntl
 import html
 import json
 import os
@@ -14,6 +15,8 @@ import urllib.error
 import urllib.request
 import urllib.parse
 import uuid
+
+import monitor_telegram
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -90,7 +93,14 @@ def save_state(path, state):
     with temporary.open('w') as output:
         os.chmod(temporary, 0o600)
         json.dump(state, output, indent=2)
+        output.flush()
+        os.fsync(output.fileno())
     temporary.replace(path)
+    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def deliver_pending(state, path, credentials):
@@ -250,6 +260,28 @@ def transitions(previous, results, now, reminder_seconds):
     return messages, state
 
 
+def telegram_notifications(config, results, state_dir, now):
+    notification = monitor_telegram.resolve_config(
+        config['notification'].get('telegram', {'enabled': False}), ROOT)
+    if not notification['enabled']:
+        return 0
+    path = state_dir / 'telegram.json'
+    state = monitor_telegram.load_state(path, notification)
+    messages, checks = transitions(state['checks'], results, now, config['reminder_hours'] * 3600)
+    queue_full = False
+    try:
+        monitor_telegram.enqueue(state, messages, checks, now)
+    except monitor_telegram.QueueFull:
+        # Drain eligible old work while preserving unadvanced reminder history.
+        queue_full = True
+    save_state(path, state)
+    token = monitor_telegram.load_credentials(ROOT / notification['credentials_file'], notification['bot_id'])
+    monitor_telegram.deliver(state, path, token, now, save_state)
+    held = sum(item['status'] in ('uncertain', 'blocked') for item in state['pending'])
+    print(f'Telegram delivery: {len(state["pending"])} pending; {held} require review; queue_full={queue_full}', flush=True)
+    return int(queue_full or bool(state['pending']))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='Show current checks without changing saved alert state')
@@ -260,13 +292,22 @@ def main():
     notification = config['notification']
     if notification['type'] not in ('journal', 'matrix'):
         raise RuntimeError('Notification delivery is not configured for that type')
-    now = time.time()
-    results = collect(config, now)
     if args.check:
+        results = collect(config, time.time())
         print(json.dumps(results, indent=2))
         return int(any(r['level'] != 'ok' for r in results.values()))
     args.state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    state_file = args.state_dir / 'state.json'
+    # systemd serializes its unit; this also excludes overlapping manual invocations.
+    with (args.state_dir / 'monitor.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return run_monitor(config, args.state_dir)
+
+
+def run_monitor(config, state_dir):
+    notification = config['notification']
+    now = time.time()
+    results = collect(config, now)
+    state_file = state_dir / 'state.json'
     try:
         saved = json.loads(state_file.read_text())
     except FileNotFoundError:
@@ -283,6 +324,12 @@ def main():
                                  'body': 'Homelab alerts — ' + stamp + '\n\n' + '\n'.join(messages)})
     # Persist the queue before sending. Transaction IDs make ambiguous retries safe.
     save_state(state_file, state)
+    failed = 0
+    try:
+        failed = telegram_notifications(config, results, state_dir, now)
+    except Exception as error:
+        print(f'Telegram delivery failed ({type(error).__name__}); retained state requires review', flush=True)
+        failed = 1
     if notification['type'] == 'matrix':
         try:
             secret_file = ROOT / notification['credentials_file']
@@ -294,8 +341,8 @@ def main():
             print(f'Matrix delivery failed ({type(error).__name__}); {len(state["pending"])} batches queued for retry', flush=True)
             return 1
     # Unhealthy services are reported in alerts; nonzero service exit is reserved
-    # for the checker itself failing, so systemd can distinguish those cases.
-    return 0
+    # for checker/delivery failures, so systemd can distinguish those cases.
+    return failed
 
 
 if __name__ == '__main__':
