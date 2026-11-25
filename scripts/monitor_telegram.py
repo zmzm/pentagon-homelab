@@ -42,10 +42,36 @@ def load_credentials(path, bot_id):
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.geteuid():
             raise PermissionError('Telegram credentials must be private and owned by the runner')
-        credentials = json.loads(source.read(4097))
-    token = credentials.get('bot_token') if isinstance(credentials, dict) else None
+        raw = source.read(4097)
+    if len(raw) > 4096:
+        raise ValueError('Telegram credential file is too large')
+    if path.suffix == '.env':
+        token = env_token(raw)
+    else:
+        # Retain the original JSON credential contract for existing installations.
+        credentials = json.loads(raw)
+        token = credentials.get('bot_token') if isinstance(credentials, dict) else None
     if not isinstance(token, str) or not re.fullmatch(re.escape(bot_id) + r':[A-Za-z0-9_-]{20,100}', token):
         raise ValueError('Telegram token does not match the configured bot')
+    return token
+
+
+def env_token(raw):
+    """Read one literal assignment without sourcing or expanding shell content."""
+    token = None
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        key, separator, value = line.partition('=')
+        if not separator or key.strip() != 'TELEGRAM_BOT_TOKEN' or token is not None:
+            raise ValueError('Expected one TELEGRAM_BOT_TOKEN assignment')
+        value = value.strip()
+        if value.startswith(('"', "'")):
+            if len(value) < 2 or value[-1] != value[0]:
+                raise ValueError('Invalid quoted Telegram token')
+            value = value[1:-1]
+        token = value
     return token
 
 

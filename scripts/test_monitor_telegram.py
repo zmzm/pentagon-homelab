@@ -169,6 +169,32 @@ class TelegramState(unittest.TestCase):
 
 
 class TelegramConfiguration(unittest.TestCase):
+    def test_env_credentials_support_literal_tokens_and_quotes_without_expansion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'telegram.env'
+            for value in (TOKEN, '"' + TOKEN + '"', "'" + TOKEN + "'"):
+                path.write_text('# Notification bot\n\nTELEGRAM_BOT_TOKEN=' + value + '\n')
+                path.chmod(0o600)
+                self.assertEqual(telegram.load_credentials(path, '123456'), TOKEN)
+                with self.assertRaises(ValueError):
+                    telegram.load_credentials(path, '999')
+
+    def test_env_credentials_reject_duplicates_shell_content_and_invalid_values(self):
+        fixtures = ['', 'TELEGRAM_BOT_TOKEN=', 'OTHER_KEY=' + TOKEN,
+                    'TELEGRAM_BOT_TOKEN=' + TOKEN + '\nTELEGRAM_BOT_TOKEN=' + TOKEN,
+                    'TELEGRAM_BOT_TOKEN="' + TOKEN,
+                    'TELEGRAM_BOT_TOKEN=$(cat /private/file)',
+                    'TELEGRAM_BOT_TOKEN=' + TOKEN + '; touch /tmp/unexpected',
+                    'TELEGRAM_BOT_TOKEN=' + TOKEN + '\n' + '#' * 4096]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'telegram.env'
+            for value in fixtures:
+                with self.subTest(value=value):
+                    path.write_text(value)
+                    path.chmod(0o600)
+                    with self.assertRaises(ValueError):
+                        telegram.load_credentials(path, '123456')
+
     def test_recipient_must_be_single_positive_private_id_and_enabled_boolean(self):
         for field, value in [('chat_id', '-100123'), ('chat_id', '@owner'), ('chat_id', '*'),
                              ('chat_id', ['123']), ('bot_id', ''), ('enabled', 'false')]:

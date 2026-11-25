@@ -27,10 +27,11 @@ Alerts remain in the journal too. A durable queue in the saved state retries fai
 
 A problem produces a message on first detection or severity change. Unchanged problems repeat after six hours. Recovery produces a `RECOVERED` message. Alert state persists in `/var/lib/homelab-monitor/state.json`, mode 0600; it survives reboots. Each run also logs a check summary.
 
-### Telegram migration (TG-05, awaiting bot setup and live acceptance)
+### Telegram migration (TG-05, awaiting live acceptance)
 
 Telegram delivery is implemented but **disabled** in the tracked configuration.
-No notification bot has been created and no live monitoring delivery test has
+The separate notification bot has been created and its token/private chat
+have been verified with read-only API calls. No live monitoring alert test has
 been run. Enabling `notification.telegram` adds outbound notifications alongside
 Matrix. Keep `notification.type`, its Matrix credentials and `allowed_users`
 unchanged until delivery is accepted; Matrix retirement is a separate task.
@@ -58,30 +59,31 @@ characters. Bot chats do not provide end-to-end encryption.
 
    ```bash
    sudo install -d -m 0700 data/monitoring
-   sudo python3 -c 'import os; from pathlib import Path; os.umask(0o077); Path("data/monitoring/telegram.json").open("x").close()'
-   sudoedit data/monitoring/telegram.json
+   sudo python3 -c 'import os; from pathlib import Path; os.umask(0o077); Path("data/monitoring/telegram.env").open("x").write("TELEGRAM_BOT_TOKEN=\n")'
+   sudoedit data/monitoring/telegram.env
    ```
 
-   Enter `{"bot_token": "<NEW_NOTIFICATION_BOT_TOKEN>"}` in the editor. The file
+   Set `TELEGRAM_BOT_TOKEN=<NEW_NOTIFICATION_BOT_TOKEN>` in the editor. The file
    must be regular, owned by the monitor runner (root for the installed unit)
    and mode 0600. Restore existing credentials from backup when rebuilding.
    Hermes must not receive this credential.
-3. Copy `monitoring/config.json` to `/root/telegram-monitor-staged.json`. In the
+3. Copy `monitoring/config.json` to private
+   `data/monitoring/telegram-staged.json` (root-owned, mode 0600). In the
    **staged copy**, set `notification.telegram.enabled` to `true`, `bot_id` to
    the new numeric bot ID as a string, and `chat_id` to the recipient's numeric
    user ID as a string. Keep `credentials_file` as
-   `data/monitoring/telegram.json`. Leave the deployed configuration disabled.
+   `data/monitoring/telegram.env`. Leave the deployed configuration disabled.
 
 After authorizing test messages, run these from the repository root using the
 same isolated state directory:
 
 ```bash
 sudo python3 -B scripts/verify_monitor_telegram.py \
-  --config /root/telegram-monitor-staged.json \
+  --config data/monitoring/telegram-staged.json \
   --state-dir /var/lib/telegram-test-monitor --phase problem
 # Repeat the problem command: it should send no second message.
 sudo python3 -B scripts/verify_monitor_telegram.py \
-  --config /root/telegram-monitor-staged.json \
+  --config data/monitoring/telegram-staged.json \
   --state-dir /var/lib/telegram-test-monitor --phase recovery
 ```
 
@@ -147,12 +149,26 @@ a nonblocking file lock to exclude manual overlap. JSON publication now fsyncs
 the file and directory, within host filesystem guarantees; local persistence and
 remote delivery remain separate effects.
 
-TG-05 validation on 2026-11-25: 36 monitoring tests, two Matrix status-listener
+Initial TG-05 validation on 2026-11-25: 36 monitoring tests, two Matrix status-listener
 tests and 17 Ansible tests passed locally. `ansible-playbook scheduled-jobs.yml
 --syntax-check` passed with an unrelated installed WinRM plugin warning;
 `git diff --check` passed. HTTP boundaries use fixtures: no bot was created,
 no Telegram/Matrix messages were sent, and no services were restarted. Telegram
-remains disabled pending separate bot setup and live acceptance.
+remained disabled pending separate bot setup and live acceptance.
+
+Follow-up on 2026-11-25: a root-owned 0600 `telegram.env` is populated.
+`getMe` verified the new bot identity differs from Hermes; `getChat` verified
+the intended private recipient is accessible. Inline mode is disabled, but
+BotFather still allows group joining: disable it before rollout. A private
+`data/monitoring/telegram-staged.json` is prepared. Telegram delivery remains
+disabled; no messages were sent. Env loading reads one literal
+`TELEGRAM_BOT_TOKEN` assignment, optionally single/double quoted, with blank
+lines and full-line comments. It never sources the file or expands shell
+content; extra/duplicate assignments and files over 4 KiB fail closed. Existing
+JSON credential files remain supported when their path is configured, and
+Telegram queue schema 1 is unchanged. The monitor is the only changed reader;
+Matrix, Hermes, relay, gateway, broker and FlowForge contracts are unchanged.
+The updated 38 monitoring tests and two Matrix status-listener tests passed.
 
 Backrest currently has authentication disabled. If authentication is enabled or the API changes, its check will report an error until the monitor is updated. Check details deliberately omit API response bodies and raw exceptions to avoid logging secrets.
 

@@ -47,7 +47,7 @@
     ],
     "telegram": {
       "enabled": false,
-      "credentials_file": "data/monitoring/telegram.json",
+      "credentials_file": "data/monitoring/telegram.env",
       "bot_id": "",
       "chat_id": ""
     }
