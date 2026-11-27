@@ -1,6 +1,8 @@
 # Replacement-server recovery checklist
 
-Prepared 2026-10-21. This joins the tested recovery components into a rehearsal procedure. A complete replacement-server rebuild has **not** been tested. The existing server stays active until a deliberate cutover; a rehearsal must keep the copied tunnel, alert sender, backup schedules and update automation inactive.
+The October 2026 checklist joins the tested recovery components into a rehearsal procedure for a replacement host with an intact backup. Keep the existing server active until a deliberate cutover. During rehearsal, keep the copied tunnel, alert sender, backup schedules and update automation inactive.
+
+If a service has lost its state and no backup exists, follow [Rebuild without a backup](#rebuild-without-a-backup) for that service. The November 2026 NVMe rebuild exercised that path for selected services.
 
 ## 1. Gather the recovery material
 
@@ -71,4 +73,30 @@ Backrest may resume configured schedules when started. During a rehearsal, revie
 - [ ] Plan one active production writer, LAN/DNS changes, tunnel activation and a fallback before moving traffic. Keep the original server available until the replacement passes acceptance checks.
 - [ ] After cutover, install/verify the scheduled jobs, run all 18 health checks and verify a new local backup and recovery result.
 
-The next milestone is a rehearsal on an identified spare machine or suitable isolated VM. No replacement target has been configured yet; this checklist does not claim that milestone is complete.
+A full replacement from backup still needs an end-to-end rehearsal on a spare machine or isolated VM.
+
+## Rebuild without a backup
+
+Use this procedure only for services whose original state is unavailable. In November 2026 it was used on the NVMe replacement for Unbound, Caddy, Pi-hole, the Pi-hole adapter, Vaultwarden, Portainer and Backrest. That work established fresh service startup and verified the first local backup with a temporary restore. Original accounts, history and data were unavailable unless retained separately by a client.
+
+### Repeat for each service
+
+1. **Check the target and the files.** Confirm the checkout path, current LAN and Tailscale addresses, Docker access, and the presence of bind mounts and private settings. Inspect credential names and whether values exist. Use `docker compose config --quiet` for validation. Keep the host's DNS working independently until Unbound and Pi-hole are verified. [Ansible host preparation](ansible/README.md#ansible-host-preparation)
+2. **Decide whether the service is being restored or rebuilt.** Preserve recovered files and credentials. A missing database or key is a blocker until the operator approves fresh initialization and any replacement secrets. The operator enters account passwords in the service UI. Keep values out of chat, logs and Git.
+3. **Initialize and validate in staging.** Create a `0700` outer directory and copy or generate files inside an inner directory. Tools such as `rsync -a` can copy the source root's permissions onto the destination, so keep the outer directory outside the copy. Use the configured image in a disposable container with no published ports. Use `--network none` where initialization works offline. Mount only the staging data the service needs. Take consistent SQLite copies through SQLite's backup API when the source is live.
+4. **Install the staged state and deploy one service.** Check that the destination is absent and stop any writer before installing staged files. Preserve numeric ownership and private modes. Use the dedicated playbook from `ansible/`, with `-K` when sudo needs a password. Use the private SSH inventory explicitly for a remote host. [Ansible deployment playbooks](ansible/README.md)
+5. **Check the actual service before continuing.** Verify the functional endpoint through the intended private route. For an interactive setup, confirm the initial account was created. Record the image, check results and remaining gaps. Remove only the disposable container and staging files created for that step.
+
+### Service-specific steps
+
+| Service | Initialize, then verify |
+| --- | --- |
+| **Unbound** | Run `ansible-playbook unbound.yml` using the tracked configuration. Require an IPv4 response over UDP and TCP at `127.0.0.1:5335`. |
+| **Caddy** | With approval, generate the local root and intermediate CA in a network-isolated Caddy container. Verify both certificates and their matching keys before installing `data/caddy/data` and `data/caddy/config`. Start with `ansible-playbook caddy.yml -e homelab_caddy_check_routes=false`. Check the TLS hostname and chain on loopback. Install and enable trust for the **public root certificate** on clients. |
+| **Pi-hole** | After Unbound, initialize both runtime directories, set a private admin password and rebuild the required `home.arpa` records. Set `127.0.0.1#5335` as the upstream and leave conditional forwarding off. For LAN and Tailscale, use `dns.listeningMode = "NONE"` with `listen-address` and `bind-dynamic` in `misc.dnsmasq_lines` to bind DNS only to loopback and the two private addresses. Add both addresses to the local records and leave `dns.localise` enabled. Confirm UDP and TCP resolution on both addresses and test from another Tailscale device. Update Caddy's Pi-hole upstream if the Pi's Tailscale address changed. |
+| **Pi-hole adapter** | Configure its ignored `.env` with the Pi's private upstream URL, a dedicated application password, and the documented timeout and cache settings. Keep Pi-hole's `app_sudo` disabled. Run the adapter playbook and require an authenticated summary with status `online`. |
+| **Vaultwarden** | With approval, use a network-isolated container to create the database and signing key. Verify SQLite integrity and confirm the new database is empty before installation. Deploy with Ansible and verify `/alive` and the web vault through Caddy. For the first user, open a short private registration window, then close it and verify the account and web vault. If an old client still has the vault, preserve its cached data before switching it to the new account. |
+| **Portainer** | Initialize the database in an isolated container, then run the Portainer playbook. Verify `/api/status` over HTTPS. The first admin has five minutes from service startup to set a password. If the setup expires, restart only Portainer and retry while the operator is ready. The Homepage widget can wait until an API token exists. |
+| **Backrest** | With approval, initialize an encrypted Restic repository at `backups/restic` and configure the `home-lab` repository and `pentagon-backup` plan. Keep schedules disabled during the first run. Use a private staged source with consistent SQLite copies for the first manual snapshot, excluding the repository itself. Verify the repository and a full temporary restore before deploying the permanent Backrest service. Save the unlock password outside the Pi and copy the repository to separate storage. |
+
+Use the [component playbooks](ansible/README.md) for exact mount requirements and expected health results. The [full recovery verifier](OPERATIONS.md#backup-recovery-verification) expects Matrix and Cloudflare recovery files. For a snapshot made before those services exist, verify the Restic restore and the files and databases actually included. Enable schedules, notifications and the tunnel only after their own checks pass and cutover is approved.
