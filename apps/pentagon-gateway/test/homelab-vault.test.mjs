@@ -16,7 +16,7 @@ import { executor, operation, validatePolicy } from '../src/operations.mjs';
 
 const exec = promisify(execFile);
 const repo = resolve(import.meta.dirname, '../../..');
-const cli = process.env.KNOWLEDGE_CLI || resolve(repo, '../apps/knowledge-router/dist/cli.js');
+const cli = process.env.KNOWLEDGE_CLI || resolve(repo, '../knowledge-router/dist/cli.js');
 
 async function fixture(t) {
   const root = await mkdtemp(resolve(tmpdir(), 'homelab-vault-'));

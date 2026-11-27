@@ -70,8 +70,8 @@ services:
       - ../pentagon-gateway/policy.example.json:/config/policy.json:ro
       - ../../data/pentagon-gateway:/state
       - ./operator.mjs:/integration/operator.mjs:ro
-      - ${KNOWLEDGE_ROUTER_PATH:-../../../apps/knowledge-router}:/knowledge-router:ro
-      - ${CODING_VAULT_PATH:-../../../apps/obsidian-vaults/coding}:/vaults/coding:ro
+      - ${KNOWLEDGE_ROUTER_PATH:-/home/pentagon-admin/Projects/knowledge-router}:/knowledge-router:ro
+      - ${CODING_VAULT_PATH:-/home/pentagon-admin/Projects/obsidian-vaults/coding}:/vaults/coding:ro
       - ../../data/knowledge-mentory:/vaults/mentory:ro
       - ../../data/knowledge-homelab:/vaults/homelab:ro
     # No published ports. Operator approval uses docker compose exec, documented below.
@@ -93,7 +93,7 @@ services:
     security_opt: [no-new-privileges:true]
     environment:
       FLOWFORGE_TOKEN: ${FLOWFORGE_TOKEN:?set FLOWFORGE_TOKEN}
-      FLOWFORGE_SOURCE_PROJECT: ${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Documents/apps/mentory}
+      FLOWFORGE_SOURCE_PROJECT: ${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Projects/mentory}
       GLM_API_KEY: ${GLM_API_KEY:?set GLM_API_KEY}
       HOME: /state/home
       XDG_CONFIG_HOME: /state/home/.config
@@ -102,18 +102,23 @@ services:
       NODE_ENV: production
     volumes:
       - ../../data/flowforge-api:/state
-      - ${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Documents/apps/mentory}:/source/project:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/pipeline_runner.py:/source/flowforge/pipeline_runner.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_config.py:/source/flowforge/flowforge_config.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_storage.py:/source/flowforge/flowforge_storage.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_status.py:/source/flowforge/flowforge_status.py:ro
+      - ${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Projects/mentory}:/source/project:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/pipeline_runner.py:/source/flowforge/pipeline_runner.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_config.py:/source/flowforge/flowforge_config.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_storage.py:/source/flowforge/flowforge_storage.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_status.py:/source/flowforge/flowforge_status.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_inspection.py:/source/flowforge/flowforge_inspection.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_models.py:/source/flowforge/flowforge_models.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_opencode.py:/source/flowforge/flowforge_opencode.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_workflows.py:/source/flowforge/flowforge_workflows.py:ro
       - ${FLOWFORGE_AGENT_LIBRARY_PATH:-/home/pentagon-admin/.config/flowforge/library}/agents/concept-plan.md:/source/planning-agents/concept-plan.md:ro
       - ${FLOWFORGE_AGENT_LIBRARY_PATH:-/home/pentagon-admin/.config/flowforge/library}/agents/grounded-hard.md:/source/planning-agents/grounded-hard.md:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/tasks.jsonl:/source/tasks.jsonl:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/steps.json:/source/steps.json:ro
-      - ${OPENCODE_BINARY:-/home/pentagon-admin/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
-      - ${KNOWLEDGE_ROUTER_PATH:-/home/pentagon-admin/Documents/apps/knowledge-router}:/home/pentagon-admin/Documents/apps/knowledge-router:ro
-      - ${CODING_VAULT_PATH:-/home/pentagon-admin/Documents/apps/obsidian-vaults/coding}:/home/pentagon-admin/Documents/apps/obsidian-vaults/coding:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/tasks.jsonl:/source/tasks.jsonl:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/steps.json:/source/steps.json:ro
+      - ${OPENCODE_BINARY:?set OPENCODE_BINARY to an absolute path to the host executable}:/usr/local/bin/opencode:ro
+      # Preserve container paths used by the planning agents and their permission rules.
+      - ${KNOWLEDGE_ROUTER_PATH:-/home/pentagon-admin/Projects/knowledge-router}:/home/pentagon-admin/Documents/apps/knowledge-router:ro
+      - ${CODING_VAULT_PATH:-/home/pentagon-admin/Projects/obsidian-vaults/coding}:/home/pentagon-admin/Documents/apps/obsidian-vaults/coding:ro
     tmpfs: ["/tmp:size=128m,mode=1777"]
     networks: [upstream, egress]
     mem_limit: 2g
@@ -175,23 +180,29 @@ services:
         read_only: true
         bind:
           create_host_path: false
-      - ${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Documents/apps/mentory}:${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Documents/apps/mentory}:ro
+      - ${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Projects/mentory}:${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Projects/mentory}:ro
       # Directory binding follows atomic queue replacements. Hide the legacy credential file.
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}:${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}:ro
-      - /dev/null:${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/.env:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/pipeline_runner.py:/source/flowforge/pipeline_runner.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_config.py:/source/flowforge/flowforge_config.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_storage.py:/source/flowforge/flowforge_storage.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_status.py:/source/flowforge/flowforge_status.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_agents.py:/source/flowforge/flowforge_agents.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_sync.py:/source/flowforge/flowforge_sync.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/flowforge_cli.py:/source/flowforge/flowforge_cli.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/watch-task.py:/source/flowforge/watch-task.py:ro
-      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Documents/apps/flow-forge-tui}/steps.json:/source/flowforge/steps.json:ro
-      - ${OPENCODE_BINARY:-/home/pentagon-admin/.opencode/bin/opencode}:/usr/local/bin/opencode:ro
-      - ${OPENCODE_BINARY:-/home/pentagon-admin/.opencode/bin/opencode}:${OPENCODE_BINARY:-/home/pentagon-admin/.opencode/bin/opencode}:ro
-      - ${KNOWLEDGE_ROUTER_PATH:-/home/pentagon-admin/Documents/apps/knowledge-router}:/home/pentagon-admin/Documents/apps/knowledge-router:ro
-      - ${CODING_VAULT_PATH:-/home/pentagon-admin/Documents/apps/obsidian-vaults/coding}:/home/pentagon-admin/Documents/apps/obsidian-vaults/coding:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}:${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}:ro
+      - /dev/null:${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/.env:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/pipeline_runner.py:/source/flowforge/pipeline_runner.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_config.py:/source/flowforge/flowforge_config.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_storage.py:/source/flowforge/flowforge_storage.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_status.py:/source/flowforge/flowforge_status.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_inspection.py:/source/flowforge/flowforge_inspection.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_models.py:/source/flowforge/flowforge_models.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_opencode.py:/source/flowforge/flowforge_opencode.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_workflows.py:/source/flowforge/flowforge_workflows.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_execution.py:/source/flowforge/flowforge_execution.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_watch.py:/source/flowforge/flowforge_watch.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_agents.py:/source/flowforge/flowforge_agents.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_sync.py:/source/flowforge/flowforge_sync.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_cli.py:/source/flowforge/flowforge_cli.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/watch-task.py:/source/flowforge/watch-task.py:ro
+      - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/steps.json:/source/flowforge/steps.json:ro
+      - ${OPENCODE_BINARY:?set OPENCODE_BINARY to an absolute path to the host executable}:/usr/local/bin/opencode:ro
+      - ${OPENCODE_BINARY:?set OPENCODE_BINARY to an absolute path to the host executable}:${OPENCODE_BINARY:?set OPENCODE_BINARY to an absolute path to the host executable}:ro
+      - ${KNOWLEDGE_ROUTER_PATH:-/home/pentagon-admin/Projects/knowledge-router}:/home/pentagon-admin/Documents/apps/knowledge-router:ro
+      - ${CODING_VAULT_PATH:-/home/pentagon-admin/Projects/obsidian-vaults/coding}:/home/pentagon-admin/Documents/apps/obsidian-vaults/coding:ro
     # Internal network only; no Docker socket, model key, writable state or session DB.
     networks: [upstream]
     mem_limit: 256m

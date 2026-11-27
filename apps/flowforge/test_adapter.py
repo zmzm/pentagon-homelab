@@ -113,7 +113,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(record['status'], 'FAILED')
         self.assertEqual(record['error'], 'INTERRUPTED_REVIEW_REQUIRED')
     def runner_path(self):
-        runner_path = Path(__file__).resolve().parents[3] / 'apps/flow-forge-tui/pipeline_runner.py'
+        runner_path = Path(__file__).resolve().parents[3] / 'flow-forge/pipeline_runner.py'
         if not runner_path.exists():
             self.skipTest('Existing FlowForge checkout is not available')
         return runner_path

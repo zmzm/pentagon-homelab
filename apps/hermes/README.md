@@ -73,7 +73,7 @@ From `apps/hermes`, use the private `.env` based on `.env.example` (mode 600).
 - `GATEWAY_TOKEN`, `APPROVER_TOKEN`, `BROKER_TOKEN`, `FLOWFORGE_TOKEN`, `FLOWFORGE_INSPECT_TOKEN`: five distinct random tokens, at least 32 characters. Generate with `openssl rand -hex 32`.
 - `DOCKER_GID`: host socket group from `stat -c %g /var/run/docker.sock` (984 on this host).
 - `FLOWFORGE_URL`: `http://flowforge-api:8082`.
-- `KNOWLEDGE_ROUTER_PATH`, `CODING_VAULT_PATH`, `FLOWFORGE_PATH`, `FLOWFORGE_AGENT_LIBRARY_PATH`, `MENTORY_PROJECT_PATH`, `OPENCODE_BINARY`: existing source paths, documented in the example.
+- `KNOWLEDGE_ROUTER_PATH`, `CODING_VAULT_PATH`, `FLOWFORGE_PATH`, `FLOWFORGE_AGENT_LIBRARY_PATH`, `MENTORY_PROJECT_PATH`, `OPENCODE_BINARY`: absolute host paths, documented in the example. Set `OPENCODE_BINARY` to the path returned by `command -v opencode` in the host shell.
 
 Build the Mentory and homelab source projections using the refresh commands in
 **Knowledge scope, audit and metrics** below before starting the gateway.
@@ -1093,9 +1093,9 @@ Refresh explicitly after relevant source changes, before deploying the gateway i
 
 ```bash
 node scripts/build_mentory_knowledge.mjs \
-  --project /home/pentagon-admin/Documents/apps/mentory \
-  --queue /home/pentagon-admin/Documents/apps/flow-forge-tui/tasks.jsonl \
-  --output /home/pentagon-admin/Documents/homelab/data/knowledge-mentory
+  --project /home/pentagon-admin/Projects/mentory \
+  --queue /home/pentagon-admin/Projects/flow-forge/tasks.jsonl \
+  --output /home/pentagon-admin/Projects/pentagon-homelab/data/knowledge-mentory
 ```
 
 Requires Node 24+. Run from the homelab root as the same UID as the gateway (1000). It
@@ -1163,7 +1163,7 @@ refresh/citations, source selection and the actual existing Knowledge Router CLI
 integration test asks about Matrix external exposure, database backups and the DNS loop
 incident against the real repository docs, checking original citation content and kinds.
 Set `KNOWLEDGE_CLI` to an alternate built CLI path if necessary; otherwise it uses the sibling
-`../apps/knowledge-router/dist/cli.js` checkout. If absent, CLI tests explicitly skip;
+`../knowledge-router/dist/cli.js` checkout. If absent, CLI tests explicitly skip;
 fixture tests alone do not prove retrieval. This local CLI check does not prove deployed
 Hermes/MCP acceptance. After deployment, ask those questions via `knowledge_search` with
 `project:"homelab"` and verify source metadata. The FlowForge integration test reuses the

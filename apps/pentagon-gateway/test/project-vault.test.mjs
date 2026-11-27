@@ -123,7 +123,7 @@ test('projection rejects source escapes, symlinked documents and tampered snapsh
 test('actual existing Knowledge Router retrieves projected decisions with original line citations', async (t) => {
   const cli =
     process.env.KNOWLEDGE_CLI ||
-    resolve(import.meta.dirname, '../../../../apps/knowledge-router/dist/cli.js');
+    resolve(import.meta.dirname, '../../../../knowledge-router/dist/cli.js');
   try {
     await readFile(cli);
   } catch {

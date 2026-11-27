@@ -22,7 +22,7 @@ class InspectorTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        runner = Path(__file__).resolve().parents[3] / 'apps/flow-forge-tui'
+        runner = Path(__file__).resolve().parents[3] / 'flow-forge'
         if not (runner / 'flowforge_cli.py').exists():
             self.temp.cleanup()
             self.skipTest('Existing FlowForge project modules are unavailable')
