@@ -104,7 +104,7 @@ The role requires the restored `data/portainer/data/portainer.db`, the existing 
 
 Deployment reuses `apps/portainer/docker-compose.yml` with `pull: missing`, `build: never`, `recreate: auto`, and no orphan removal. An existing image is reused; a missing image can be downloaded. Configuration or image changes can recreate the container. Watchtower remains enabled in the Compose definition. After deployment, the role verifies `https://docker.home.arpa/api/status` through DNS and Caddy using the local CA and requires an API version in the response. This checks API reachability, not administrator authentication or widget authorization. Configure the route with `homelab_portainer_url` and `homelab_portainer_ca_path`.
 
-Without Vault variables, the existing `.env` content is preserved and its permissions are restricted to 0600. Compose validation and deployment output are hidden because container labels include the Homepage API key.
+Without Vault variables, the existing `.env` content is preserved and its permissions are restricted to 0600. Portainer can start with a blank `PORTAINER_HOMEPAGE_WIDGET_KEY` during initial setup. Homepage discovers the Portainer widget after a real access token is saved in that setting and the playbook is rerun. Compose validation and deployment output are hidden because container labels can include the Homepage API key.
 
 Validation on 2026-10-19: syntax and production preview passed; deployment reconciled Portainer and restricted `.env` permissions (`changed=2`), and a repeat passed with `changed=0`, `failed=0`. Both deployments passed the HTTPS API check. Existing `.env` contents were verified unchanged, and the existing local image was reused.
 

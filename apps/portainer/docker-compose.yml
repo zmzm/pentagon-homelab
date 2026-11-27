@@ -15,10 +15,10 @@ services:
       - homepage.icon=portainer
       - homepage.href=http://docker.home.arpa
       - homepage.description=Docker management
-      - homepage.widget.type=portainer
-      - homepage.widget.url=http://portainer:9000
-      - homepage.widget.env=4
-      - homepage.widget.key=${PORTAINER_HOMEPAGE_WIDGET_KEY:?set PORTAINER_HOMEPAGE_WIDGET_KEY}
+      - ${PORTAINER_HOMEPAGE_WIDGET_KEY:+homepage.}widget.type=portainer
+      - ${PORTAINER_HOMEPAGE_WIDGET_KEY:+homepage.}widget.url=http://portainer:9000
+      - ${PORTAINER_HOMEPAGE_WIDGET_KEY:+homepage.}widget.env=4
+      - ${PORTAINER_HOMEPAGE_WIDGET_KEY:+homepage.}widget.key=${PORTAINER_HOMEPAGE_WIDGET_KEY:-}
 
 networks:
   proxy:
