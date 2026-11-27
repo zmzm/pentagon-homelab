@@ -7,7 +7,7 @@ from threading import Lock
 
 app = Flask(__name__)
 
-PIHOLE_BASE_URL = os.environ.get("PIHOLE_BASE_URL", "http://100.126.16.76:8081").rstrip("/")
+PIHOLE_BASE_URL = os.environ.get("PIHOLE_BASE_URL", "http://100.89.74.43:8081").rstrip("/")
 PIHOLE_PASSWORD = os.environ.get("PIHOLE_PASSWORD", "")
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "10"))
 SUMMARY_CACHE_TTL = int(os.environ.get("SUMMARY_CACHE_TTL", "5"))

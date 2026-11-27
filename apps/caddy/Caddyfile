@@ -18,7 +18,7 @@ docker.home.arpa {
 }
 
 pihole.home.arpa {
-    reverse_proxy 100.126.16.76:8081
+    reverse_proxy 100.89.74.43:8081
 }
 
 interview-assistant.home.arpa {

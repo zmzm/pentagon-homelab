@@ -132,7 +132,7 @@ homelab/
 ```text
 vault.home.arpa                → vaultwarden:80
 docker.home.arpa               → portainer:9000
-pihole.home.arpa               → 100.126.16.76:8081
+pihole.home.arpa               → 100.89.74.43:8081
 interview-assistant.home.arpa  → nextapp:4000
 dashboard.home.arpa            → homepage:3000
 backrest.home.arpa             → backrest:9898
