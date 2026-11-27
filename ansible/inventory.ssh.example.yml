@@ -21,4 +21,4 @@ homelab:
           # Changing these requires reviewing the Compose definitions too.
           homelab_owner: pentagon-admin
           homelab_group: pentagon-admin
-          homelab_repo_path: /home/pentagon-admin/Documents/homelab
+          homelab_repo_path: /home/pentagon-admin/Projects/pentagon-homelab

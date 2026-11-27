@@ -4,7 +4,7 @@ After=homelab-monitor.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 -B /home/pentagon-admin/Documents/homelab/apps/smalltv-dashboard/export_monitor.py
+ExecStart=/usr/bin/python3 -B /home/pentagon-admin/Projects/pentagon-homelab/apps/smalltv-dashboard/export_monitor.py
 StateDirectory=smalltv-dashboard
 StateDirectoryMode=0755
 UMask=0022

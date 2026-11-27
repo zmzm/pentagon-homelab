@@ -13,12 +13,12 @@ services:
       - TZ=Europe/Warsaw
 
     volumes:
-      - /home/pentagon-admin/Documents/homelab/data/backrest/data:/data
-      - /home/pentagon-admin/Documents/homelab/data/backrest/config:/config
-      - /home/pentagon-admin/Documents/homelab/data/backrest/cache:/cache
-      - /home/pentagon-admin/Documents/homelab/data/backrest/tmp:/tmp
-      - /home/pentagon-admin/Documents/homelab:/userdata/homelab:ro
-      - /home/pentagon-admin/Documents/homelab/backups:/repos
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/backrest/data:/data
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/backrest/config:/config
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/backrest/cache:/cache
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/backrest/tmp:/tmp
+      - /home/pentagon-admin/Projects/pentagon-homelab:/userdata/homelab:ro
+      - /home/pentagon-admin/Projects/pentagon-homelab/backups:/repos
 
     networks:
       - proxy

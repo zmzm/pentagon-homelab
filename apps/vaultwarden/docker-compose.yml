@@ -7,7 +7,7 @@ services:
       SIGNUPS_ALLOWED: false
       DOMAIN: "https://vault.home.arpa"
     volumes:
-      - /home/pentagon-admin/Documents/homelab/data/vaultwarden/data:/data
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/vaultwarden/data:/data
     networks:
       - proxy
 networks:

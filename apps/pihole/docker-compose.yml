@@ -13,8 +13,8 @@ services:
       FTLCONF_webserver_api_max_sessions: 64
 
     volumes:
-      - /home/pentagon-admin/Documents/homelab/data/pihole/etc-pihole:/etc/pihole
-      - /home/pentagon-admin/Documents/homelab/data/pihole/etc-dnsmasq.d:/etc/dnsmasq.d
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/pihole/etc-pihole:/etc/pihole
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/pihole/etc-dnsmasq.d:/etc/dnsmasq.d
 
     labels:
       - homepage.group=Network

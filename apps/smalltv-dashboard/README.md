@@ -108,13 +108,13 @@ Docker socket or monitoring credentials.
 Install the exporter before starting the updated Compose service:
 
 ```bash
-cd /home/pentagon-admin/Documents/homelab/apps/smalltv-dashboard
+cd /home/pentagon-admin/Projects/pentagon-homelab/apps/smalltv-dashboard
 sudo systemd-analyze verify smalltv-status-export.service smalltv-status-export.timer
 sudo install -m 0644 smalltv-status-export.service smalltv-status-export.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl start smalltv-status-export.service
 sudo systemctl enable --now smalltv-status-export.timer
-sudo install -d -m 0700 -o 65534 -g 65534 /home/pentagon-admin/Documents/homelab/data/smalltv-dashboard
+sudo install -d -m 0700 -o 65534 -g 65534 /home/pentagon-admin/Projects/pentagon-homelab/data/smalltv-dashboard
 docker compose -f compose.yaml up -d --build
 ```
 

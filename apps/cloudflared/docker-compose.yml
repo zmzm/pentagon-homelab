@@ -6,6 +6,6 @@ services:
     command: tunnel --config /etc/cloudflared/config.yml --metrics 127.0.0.1:20241 run
     network_mode: host
     volumes:
-      - /home/pentagon-admin/Documents/homelab/data/cloudflared:/etc/cloudflared:ro
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/cloudflared:/etc/cloudflared:ro
     #extra_hosts:
       #- "host.docker.internal:host-gateway"

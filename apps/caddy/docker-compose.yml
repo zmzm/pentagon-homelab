@@ -8,8 +8,8 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - /home/pentagon-admin/Documents/homelab/data/caddy/data:/data
-      - /home/pentagon-admin/Documents/homelab/data/caddy/config:/config
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/caddy/data:/data
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/caddy/config:/config
     networks:
       - proxy
 

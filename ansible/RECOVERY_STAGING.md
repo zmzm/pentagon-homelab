@@ -5,7 +5,7 @@ This workflow prepares recovery material without extracting archives, overwritin
 ## Build a new bundle on the current server
 
 ```bash
-cd ~/Documents/homelab
+cd ~/Projects/pentagon-homelab
 sudo python3 -B scripts/build_recovery_bundle.py --output /tmp/homelab-recovery-bundle-2026-10-21
 ```
 
@@ -18,7 +18,7 @@ The latest `plan:pentagon-backup` snapshot is copied using Restic into a separat
 The bundle must be accessible on the Ansible controller. Then:
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook -i inventory.ssh.yml stage-recovery.yml \
   -e homelab_recovery_bundle=/absolute/controller/path/to/recovery-bundle --check
 ansible-playbook -i inventory.ssh.yml stage-recovery.yml \

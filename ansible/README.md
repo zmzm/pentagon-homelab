@@ -5,7 +5,7 @@
 Run commands from this directory so Ansible loads `ansible.cfg` and the local inventory:
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook site.yml
 ansible-playbook prepare.yml --syntax-check
 ansible-playbook prepare.yml --check --diff
@@ -52,7 +52,7 @@ Validation on 2026-10-11: syntax validation passed; the production preview and t
 ## Caddy deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook caddy.yml --syntax-check
 ansible-playbook caddy.yml --check --diff
 ansible-playbook caddy.yml
@@ -73,7 +73,7 @@ Validation on 2026-10-19: syntax, preview, deployment, and repeat passed with `c
 ## Homepage deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook homepage.yml --syntax-check
 ansible-playbook homepage.yml --check --diff
 ansible-playbook homepage.yml
@@ -94,7 +94,7 @@ Homepage validation on 2026-10-11: syntax and preview passed; the first deployme
 ## Portainer deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook portainer.yml --syntax-check
 ansible-playbook portainer.yml --check --diff
 ansible-playbook portainer.yml
@@ -115,7 +115,7 @@ Recommended: store a separate Vault password in your password manager and supply
 Create the encrypted variables file from the existing working key:
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 python3 import-portainer-vault.py
 ```
 
@@ -139,7 +139,7 @@ References: [Ansible Vault](https://docs.ansible.com/projects/ansible/latest/vau
 ## Watchtower deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook watchtower.yml --syntax-check
 ansible-playbook watchtower.yml --check --diff
 ansible-playbook watchtower.yml
@@ -156,7 +156,7 @@ Validation on 2026-10-19: syntax, production preview, deployment, and repeat pas
 ## Vaultwarden deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook vaultwarden.yml --syntax-check
 ansible-playbook vaultwarden.yml --check --diff
 ansible-playbook vaultwarden.yml
@@ -177,7 +177,7 @@ Validation on 2026-10-19: syntax, production preview, deployment, and repeat pas
 ## Backrest deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook backrest.yml --syntax-check
 ansible-playbook backrest.yml --check --diff
 ansible-playbook backrest.yml
@@ -192,7 +192,7 @@ Before reconciling a running Backrest, the role waits up to about a minute for o
 ## Unbound deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook unbound.yml --syntax-check
 ansible-playbook unbound.yml --check --diff
 ansible-playbook unbound.yml
@@ -205,7 +205,7 @@ The role uses the existing Compose definition with `pull: missing`, `build: neve
 ## Pi-hole deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook pihole.yml --syntax-check
 ansible-playbook pihole.yml --check --diff
 ansible-playbook pihole.yml
@@ -228,7 +228,7 @@ Validation on 2026-10-19: syntax, production preview, deployment and repeat pass
 ## Pi-hole adapter deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook pihole-adapter.yml --syntax-check
 ansible-playbook pihole-adapter.yml --check --diff
 ansible-playbook pihole-adapter.yml
@@ -243,7 +243,7 @@ Unlike the registry-image services, this service is built locally. `homelab_piho
 Post-deployment checks use the private `proxy` address: `/health` must return `ok: true`, and `/pihole-summary` must return `status: online`, exercising Pi-hole authentication and statistics retrieval. Summary responses and container details are hidden from Ansible output. These checks do not expose a new host port or public route. Session tokens and upstream error details are excluded from application logs and error responses; useful status codes and exception types remain. Three tests cover token privacy through the session lifecycle, malformed authentication responses, and summary exceptions. Run them against the built image with no networking:
 
 ```bash
-cd ~/Documents/homelab
+cd ~/Projects/pentagon-homelab
 sudo docker run --rm --network none --entrypoint python \
   --mount type=bind,src="$PWD/apps/pihole-adapter/test_app.py",dst=/app/test_app.py,readonly \
   pihole-adapter-pihole-adapter -B -m unittest test_app -v
@@ -254,7 +254,7 @@ Backrest/Unbound/adapter validation on 2026-10-19: all three playbooks passed sy
 ## Matrix deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook matrix.yml --syntax-check
 ansible-playbook matrix.yml --check --diff
 ansible-playbook matrix.yml
@@ -277,7 +277,7 @@ Database recovery procedure: [operations](../OPERATIONS.md#matrix-database-backu
 Import the existing password locally, using the same Vault unlock password already kept in your password manager for Portainer:
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 python3 -B import-matrix-vault.py
 ansible-playbook matrix.yml -e @vars/matrix.vault.yml --ask-vault-pass --check --diff
 ansible-playbook matrix.yml -e @vars/matrix.vault.yml --ask-vault-pass
@@ -306,7 +306,7 @@ Validation on 2026-10-19: syntax and production preview passed; deployment restr
 ## Cloudflare Tunnel deployment
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook cloudflared.yml --syntax-check
 ansible-playbook cloudflared.yml --check --diff
 ansible-playbook cloudflared.yml
@@ -327,7 +327,7 @@ Validation on 2026-10-19: syntax, preview and deployment passed (`changed=3` for
 ## Monitoring and database backup jobs
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook scheduled-jobs.yml --syntax-check
 ansible-playbook scheduled-jobs.yml --check --diff
 ansible-playbook scheduled-jobs.yml

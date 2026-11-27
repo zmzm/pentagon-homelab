@@ -5,7 +5,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 -B /home/pentagon-admin/Documents/homelab/scripts/recovery_test.py
+ExecStart=/usr/bin/python3 -B /home/pentagon-admin/Projects/pentagon-homelab/scripts/recovery_test.py
 StateDirectory=homelab-recovery
 StateDirectoryMode=0700
 UMask=0077
@@ -19,7 +19,7 @@ NoNewPrivileges=true
 PrivateTmp=false
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/tmp /home/pentagon-admin/Documents/homelab/backups/restic/locks
+ReadWritePaths=/tmp /home/pentagon-admin/Projects/pentagon-homelab/backups/restic/locks
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

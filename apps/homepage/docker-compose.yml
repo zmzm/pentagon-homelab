@@ -8,7 +8,7 @@ services:
     environment:
       - HOMEPAGE_ALLOWED_HOSTS=dashboard.home.arpa, homepage:3000
     volumes:
-      - /home/pentagon-admin/Documents/homelab/data/homepage/config:/app/config
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/homepage/config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
     labels:
       - com.centurylinklabs.watchtower.enable=true

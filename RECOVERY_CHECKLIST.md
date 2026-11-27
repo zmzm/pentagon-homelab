@@ -15,7 +15,7 @@ The local Restic repository is currently the verified backup source. External ba
 
 Follow [replacement-host preparation](ansible/REMOTE_PROVISIONING.md) to install the OS, establish SSH/sudo access and confirm hostname, machine ID and SSH host-key fingerprint. Use a supported architecture and enough storage for the encrypted repository, restored data, container images and temporary recovery tests; the preflight's 2 GiB minimum is not sufficient sizing guidance.
 
-- [ ] Preserve the expected account and checkout path, or review every absolute bind mount before changing them: `/home/pentagon-admin/Documents/homelab`.
+- [ ] Preserve the expected account and checkout path, or review every absolute bind mount before changing them: `/home/pentagon-admin/Projects/pentagon-homelab`.
 - [ ] Create the controller's private SSH inventory and pass its explicit `-i inventory.ssh.yml` to every remote playbook. The default inventory points at the existing local server.
 - [ ] Run read-only remote preflight before any preparation.
 - [ ] Install the checkout and prerequisites, then prepare directories and Docker networks as described in the linked guide. Confirm the pinned Ansible collection from `ansible/requirements.yml` is installed on the controller.

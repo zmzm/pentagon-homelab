@@ -18,7 +18,7 @@ services:
       - /sys/devices:/sys/devices:ro
       - ./disk-probe:/disk-probe:ro
       - /var/lib/smalltv-dashboard:/status:ro
-      - /home/pentagon-admin/Documents/homelab/data/smalltv-dashboard:/state:rw
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/smalltv-dashboard:/state:rw
     networks:
       - proxy
     read_only: true

@@ -11,14 +11,14 @@ The target needs a supported 64-bit Debian-family OS, systemd, Python 3 at `/usr
 On the controller, use the repository's installed Ansible and pinned `community.docker` collection. Run commands from `ansible/` to load its configuration.
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 cp inventory.ssh.example.yml inventory.ssh.yml
 chmod 600 inventory.ssh.yml
 ```
 
 Edit the private copy with the target's SSH address, port and user. Read the target hostname and machine ID from its trusted console (`hostname` and `cat /etc/machine-id`) and fill in the expected identity fields locally. Check the SSH host-key fingerprint against the console before accepting it in your controller's SSH known-hosts file. Host-key verification remains enabled; do not bypass a changed-key warning.
 
-The example retains `pentagon-admin` and `/home/pentagon-admin/Documents/homelab`, matching the current Compose bind mounts. The SSH administrator may be a different account, but the configured homelab owner/group must exist. If the homelab account or checkout path changes, review and update Compose bind mounts and other absolute paths too: overriding inventory variables alone does not rewrite Compose files.
+The example retains `pentagon-admin` and `/home/pentagon-admin/Projects/pentagon-homelab`, matching the current Compose bind mounts. The SSH administrator may be a different account, but the configured homelab owner/group must exist. If the homelab account or checkout path changes, review and update Compose bind mounts and other absolute paths too: overriding inventory variables alone does not rewrite Compose files.
 
 ## Verify before provisioning
 

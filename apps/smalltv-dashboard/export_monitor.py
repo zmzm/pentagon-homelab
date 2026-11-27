@@ -78,7 +78,7 @@ def publish(destination, data):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state', type=Path, default=Path('/var/lib/homelab-monitor/state.json'))
-    parser.add_argument('--config', type=Path, default=Path('/home/pentagon-admin/Documents/homelab/monitoring/config.json'))
+    parser.add_argument('--config', type=Path, default=Path('/home/pentagon-admin/Projects/pentagon-homelab/monitoring/config.json'))
     parser.add_argument('--output', type=Path, default=Path('/var/lib/smalltv-dashboard/status.json'))
     args = parser.parse_args()
     try:

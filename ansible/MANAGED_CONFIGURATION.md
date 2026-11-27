@@ -5,7 +5,7 @@
 Semantically unchanged configurations keep their original bytes and do not restart services. Changed validated settings are written atomically with private permissions; a running service is restarted and checked for readiness. If activation fails, existing prior configuration is restored and restarted when available. The rollback branch is implemented but a forced production failure was not exercised. The selected container must actually bind the configuration directory, preventing an unrelated service from being restarted.
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook matrix-config.yml --check
 ansible-playbook matrix-config.yml
 ansible-playbook cloudflared-config.yml --check

@@ -21,4 +21,4 @@ homelab_scheduled_job_scripts:
   - vaultwarden_recovery_client.py
 
 # Canonical files remain in monitoring/; substitute the target checkout path.
-homelab_scheduled_job_source_path: /home/pentagon-admin/Documents/homelab
+homelab_scheduled_job_source_path: /home/pentagon-admin/Projects/pentagon-homelab

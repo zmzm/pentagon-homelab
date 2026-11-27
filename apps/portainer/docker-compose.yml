@@ -7,7 +7,7 @@ services:
       - proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /home/pentagon-admin/Documents/homelab/data/portainer/data:/data
+      - /home/pentagon-admin/Projects/pentagon-homelab/data/portainer/data:/data
     labels:
       - com.centurylinklabs.watchtower.enable=true
       - homepage.group=Infrastructure

@@ -297,7 +297,7 @@ To change thresholds, endpoints, or expected containers, edit `monitoring/config
 Ansible now manages all three jobs (monitoring, the Matrix status listener, and database backups):
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook scheduled-jobs.yml --check --diff
 ansible-playbook scheduled-jobs.yml
 ```
@@ -330,11 +330,11 @@ Backrest references: [operations API](https://garethgeorge.github.io/backrest/do
 
 Matrix delivery was verified with a welcome message, an isolated test alert, and a recovery message on 2026-10-11. A repeated test failure produced no duplicate alert; all 16 production checks remained healthy. No production services were stopped.
 
-To recreate the room after rebuilding (only when the credential file does not already exist):
+To recreate the room after rebuilding (only when the credential file does not already exist), substitute the absolute path to the restored bot environment file:
 
 ```bash
 sudo python3 -B scripts/setup_matrix_alerts.py \
-  --bot-env /home/pentagon-admin/Documents/apps/matrix-flowforge-bot/.env \
+  --bot-env /path/to/restored/matrix-flowforge-bot/.env \
   --recipient @vladjik:pentagonlab.org --bot-user @homelab:pentagonlab.org
 ```
 

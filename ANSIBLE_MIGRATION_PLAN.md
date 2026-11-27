@@ -75,7 +75,7 @@ Capabilities:
 Validation:
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook site.yml
 ```
 

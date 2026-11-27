@@ -323,7 +323,7 @@ Send `!status` in **Server alerts** for a fresh health report; a separate lightw
 Run from `ansible/` to load the repository configuration:
 
 ```bash
-cd ~/Documents/homelab/ansible
+cd ~/Projects/pentagon-homelab/ansible
 ansible-playbook site.yml
 ansible-playbook prepare.yml --check --diff
 ansible-playbook prepare.yml
