@@ -80,7 +80,13 @@ starting at the deadline, unavailable verification, and an uncertain restart req
 Verification never retries the write. See [restart verification and rollout](../hermes/README.md#restart-verification-and-rollout)
 for the structured response, request budgets and deployment steps.
 
-`src/matrix-approvals.mjs` is the separate trusted approval relay. Completed planning
+`src/telegram-approvals.mjs` is the current trusted approval/result relay, using a
+separate Telegram bot and private versioned state. It reuses stored-action reconciliation
+from the historical Matrix relay but replaces transport and retry semantics: ambiguous
+Telegram sends/uploads retain claims and require review, with no automatic replay.
+See [Telegram-only setup](../hermes/README.md#telegram-only-setup).
+
+`src/matrix-approvals.mjs` is retained as the historical Matrix approval relay. Completed planning
 runs produce a deterministic English notice and complete UTF-8 Markdown attachments
 from the gateway-sanitized response, using the existing Matrix account. Delivery
 state retains sanitized plan text, media URIs and acknowledged event IDs across
@@ -88,5 +94,8 @@ restarts. Ambiguous uploads require review; incomplete delivery preserves a fail
 record and a bounded text fallback. See [delivery and recovery](../hermes/README.md#planning-result-delivery)
 and [the 2026-10-23 relay deployment record](../../reports/2026-10-23-flowforge-matrix-delivery.md).
 
-Start with `policy.example.json`, an empty workflow allowlist, and explicit service policies.
+The Hermes Compose stack mounts `policy.json` into both the gateway and broker at
+`/config/policy.json`. This policy is private and Git-ignored; copy `policy.example.json`
+to `policy.json` and configure the local rules before starting the stack.
+For a new installation, start with an empty workflow allowlist and explicit service policies.
 No runtime, planner, general memory, scheduler or business pipeline is implemented here.

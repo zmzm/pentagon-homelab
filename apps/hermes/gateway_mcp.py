@@ -139,7 +139,7 @@ def flowforge_run(workflow: str, session_id: str, user_request: str,
                   input: TaskAnalysisInput, approval_id: str | None = None):
     """Request task-analysis planning using project=mentory, task_id, task_sha256 and
     input.context for concise retrieved knowledge with citations (max 5000 chars).
-    Do not use knowledge_context or other input fields. Discover tasks first. Matrix
+    Do not use knowledge_context or other input fields. Discover tasks first. Telegram
     approval is required. The trusted listener starts the run and delivers its plans.
     Never substitute another task or retry an uncertain write outcome.
     """
@@ -179,8 +179,9 @@ def homelab_restart_service(service: str, session_id: str, user_request: str,
                             approval_id: str | None = None):
     """Request a service restart. APPROVAL_REQUIRED means stop and show the approval ID.
 
-    A trusted Matrix listener posts the exact action. Only an authorized user can
-    send !approve <ID> or !reject <ID>. The listener executes and reports the result.
+    A separate trusted Telegram approval bot posts the exact action in the private home chat.
+    Only the authorized user can tap Approve/Reject or reply to the prompt with
+    !approve <ID> or !reject <ID>. The listener executes and reports the result.
     Do not retry or make a duplicate request. Plain yes does not authorize execution.
     """
     return call(f"/homelab/services/{urllib.parse.quote(service, safe='')}/restart",

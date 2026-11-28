@@ -92,7 +92,7 @@ export function approvalPrompt(request, description, controlStyle) {
   };
 }
 
-function requestSummary(request) {
+export function requestSummary(request) {
   const args = request.arguments;
   if (request.tool === 'homelab.restartService') {
     return {
@@ -140,16 +140,18 @@ const fieldLabels = {
 
 // Keep every key, value and JSON type visible, without displaying a JSON log.
 // Only reference/command metadata may be collapsed; action arguments stay open.
-function argumentRows(value, depth = 0) {
+export function argumentRows(value, depth = 0, friendlyLabels = false) {
   if (value !== null && typeof value === 'object' && Object.keys(value).length) {
     const array = Array.isArray(value);
     const rows = Object.entries(value).map(([key, child]) => {
       const name = array
         ? `Item ${Number(key) + 1}`
         : Object.hasOwn(fieldLabels, key)
-          ? `${fieldLabels[key]} (${key})`
+          ? friendlyLabels
+            ? fieldLabels[key]
+            : `${fieldLabels[key]} (${key})`
           : key;
-      const rendered = argumentRows(child, depth + 1);
+      const rendered = argumentRows(child, depth + 1, friendlyLabels);
       return {
         body: `${'  '.repeat(depth)}• ${name}: ${rendered.body}`,
         formatted_body: `<li><strong>${html(name)}:</strong> ${rendered.formatted_body}</li>`,

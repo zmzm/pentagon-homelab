@@ -10,6 +10,32 @@ The sections below distinguish **enforced behavior**, **procedural/model instruc
 An enforced guarantee is scoped to its implementation and storage assumptions,
 not a promise about every crash, host failure, or future model response.
 
+## Telegram replacement (2026-11-28)
+
+The current agent Compose replaces the Matrix relay with
+`apps/pentagon-gateway/src/telegram-approvals.mjs`, using its own Telegram bot
+and `data/telegram-approvals/telegram-approvals.json` (version 1). The Matrix
+relay and its records remain available for historical compatibility. The
+[Telegram setup](../apps/hermes/README.md#telegram-only-setup) supersedes Matrix
+transport/rollout details below for the current agent stack. Historical evidence
+still applies only to its recorded deployment.
+
+Gateway decision evidence adds optional `telegramUpdateId`, `telegramChatId` and
+`telegramPromptMessageId` fields for the trusted relay. Existing Matrix/operator
+consumers and retained approval/audit/run records remain readable; the action,
+arguments, session binding and consume-before-execute behavior are unchanged.
+Hermes does not receive the approver credential or relay bot token. Only the broker
+has Docker socket access. Telegram-only native selections add cron management to
+Telegram; scheduled runs still exclude cron management. Existing saved Matrix jobs
+are preserved and require individual review rather than automatic conversion.
+
+Unlike Matrix transaction sends, Telegram sends/documents use durable local claims
+and suppress replay after uncertainty. Only explicit 429 rejections get bounded
+retries. State persistence failure terminates the relay before another update poll;
+unknown state versions/invalid records fail startup. This assumes one relay instance
+and reliable local state, without multi-host or arbitrary-corruption guarantees.
+Implementation/tests do not establish deployment or live Telegram acceptance.
+
 ## Shared guidance and provenance
 
 Resolve the local coding root once per task, when shared guidance is needed:

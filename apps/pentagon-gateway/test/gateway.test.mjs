@@ -608,6 +608,67 @@ test('operator execution uses exact stored action and records verified Matrix ev
   assert.ok(audit.includes('"matrixEventId":"$decision"'));
 });
 
+test('Telegram evidence is validated and retained while exact stored execution stays single-use', async (t) => {
+  const calls = [];
+  const { request, state } = await fixture(t, async (tool, args) => {
+    calls.push({ tool, args });
+    return { restarted: true };
+  });
+  const { data } = await request('/homelab/services/vaultwarden/restart', {
+    method: 'POST',
+    data: {},
+  });
+  const id = data.approvalId;
+  const decision = {
+    approve: true,
+    operator: 'telegram:123456',
+    telegramUpdateId: '42',
+    telegramChatId: '123456',
+    telegramPromptMessageId: '10',
+  };
+  for (const invalid of [
+    { ...decision, telegramUpdateId: undefined },
+    { ...decision, telegramChatId: '-123' },
+    { ...decision, telegramPromptMessageId: 'not-a-message' },
+    { ...decision, matrixEventId: '$event', matrixRoomId: '!room', promptEventId: '$prompt' },
+  ]) {
+    assert.equal(
+      (
+        await request(`/approvals/${id}`, {
+          admin: true,
+          method: 'POST',
+          data: invalid,
+        })
+      ).status,
+      400,
+    );
+  }
+  assert.equal(
+    (
+      await request(`/approvals/${id}`, {
+        admin: true,
+        method: 'POST',
+        data: decision,
+      })
+    ).status,
+    200,
+  );
+  assert.deepEqual((await request(`/approvals/${id}`, { admin: true })).data.decision, decision);
+  await request(`/approvals/${id}/execute`, { admin: true, method: 'POST', data: {} });
+  assert.equal(
+    (
+      await request(`/approvals/${id}/execute`, {
+        admin: true,
+        method: 'POST',
+        data: {},
+      })
+    ).status,
+    403,
+  );
+  assert.deepEqual(calls, [{ tool: 'homelab.restartService', args: { service: 'vaultwarden' } }]);
+  assert.ok(readFileSync(`${state}/audit.jsonl`, 'utf8').includes('"telegramUpdateId":"42"'));
+});
+
 test('task-analysis requires a concrete Mentory task and immutable task content hash', () => {
   const planningPolicy = { ...policy, workflows: { 'task-analysis': { permission: 'CONFIRM' } } };
   assert.throws(

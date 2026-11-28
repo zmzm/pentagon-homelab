@@ -210,8 +210,8 @@ def main():
     live = parser.parse_args().live
     name = 'hermes-skills-validation-' + uuid.uuid4().hex[:10]
     record = {'utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              'coverage': ('CLI behavioral; CLI/Matrix/Telegram/cron effective schemas; no Matrix message sent'
-                           if live else 'Offline CLI/Matrix/Telegram/cron effective schemas, Telegram intake and native skill loading; no model request')}
+              'coverage': ('CLI behavioral; CLI/Telegram/cron effective schemas; no Matrix message sent'
+                           if live else 'Offline CLI/Telegram/cron effective schemas, Telegram intake and native skill loading; no model request')}
     before_states = states()
     before_data = json.loads(python(SOURCE, SNAPSHOT))
     source = json.loads(docker('inspect', SOURCE))[0]
@@ -291,7 +291,7 @@ print('PASS: native CLI and gateway startup imports use the production cache and
             print(record['native_startup_imports'], flush=True)
             registration = (ROOT / 'scripts/verify_hermes_tool_registration.py').read_text()
             # Availability is cached on import: set the chat-session marker before
-            # starting Python, so Telegram's cron exclusion cannot be a false pass.
+            # starting Python, so Telegram's cron availability is checked with the CLI.
             record['registration'] = docker('exec', '-i', '--user', '10000:10000',
                                             '-e', 'HERMES_GATEWAY_SESSION=1', name,
                                             PYTHON, '-', input=registration, offline_diagnostic=not live)

@@ -1,6 +1,6 @@
 # Hermes personal runtime PoC
 
-Hermes owns Matrix and Telegram conversation, sessions, lightweight memory and new
+Hermes owns Telegram conversation, sessions, lightweight memory and new
 conversational schedules. The gateway owns the stable tool API, permission policy and audit. Knowledge
 Router owns retrieval; FlowForge owns planning/workflows. Production FlowForge timers,
 monitoring and existing application services remain independent.
@@ -9,18 +9,18 @@ monitoring and existing application services remain independent.
 
 | Capability | Implementation and verification |
 | --- | --- |
-| Matrix + GLM | Running; a real authorized Matrix request inspected Vaultwarden, read logs and returned an answer |
-| Telegram | Deployed alongside Matrix on 2026-11-25; polling, outbound delivery and deployed authorization checks passed. Live conversation/negative-case acceptance remains pending; see [TG-04 evidence](../../reports/2026-11-25-hermes-telegram-tg04.md). Matrix remains the approval/delivery channel. |
+| Matrix + GLM | Historical deployment; Matrix is removed from the current agent Compose configuration. |
+| Telegram | Telegram-only configuration and separate approval relay implemented; see the current setup below. Prior TG-04 evidence covers the former dual-platform deployment only. |
 | Personal MCP tools | Fifteen tools registered through native CLI/Matrix/Telegram/cron selection. Gateway discovery and Vaultwarden inspection passed on 2026-11-25; FlowForge project inspection currently fails upstream. See [TG-04 evidence](../../reports/2026-11-25-hermes-telegram-tg04.md) and historical inspection acceptance below. |
 | Service discovery | Deployed 2026-10-22: policy-backed configured tool coverage, with identifiers and informational restart levels; no Docker query or runtime health claim |
 | Permissions | READ/AUTO_SAFE/CONFIRM/DENY; exact-action, durable single-use approvals; no model approver credential |
-| Matrix approvals | Separate trusted listener posts exact actions and accepts commands or seeded reactions only from allowed Matrix users in the configured room; security tests pass |
+| Telegram approvals | Separate bot/relay verifies the configured private-chat user and exact prompt; gateway retains durable single-use execution claims. Live acceptance pending. |
 | Knowledge Router | Existing router searches coding guidance, completed Mentory task records/history, and a separate allowlisted homelab documentation snapshot; homelab deployment/refresh is explicit |
 | FlowForge | Planning-only API around existing runner, task hashes and read-only source snapshot; earlier live GLM run saved both plans in 633 seconds and verified text delivery; complete sanitized Markdown attachments deployed 2026-10-23, validated with isolated fixtures and read-only runtime checks |
 | Scheduling | Live one-run health check survived restart, executed and delivered once to Matrix; job is now disabled |
 | Voice, structured entity memory | Deferred |
 
-The PoC shares `@homelab:pentagonlab.org` with monitoring at the user's request. Its private,
+The historical Matrix PoC shared `@homelab:pentagonlab.org` with monitoring at the user's request. Its private,
 unencrypted **Hermes** room is `!LMCcDgGWyHMjEWvlWK:pentagonlab.org`, with
 `@vladjik:pentagonlab.org` authorized. A dedicated account remains an optional later separation.
 The host currently cannot enforce Docker memory limits; configured limits are advisory.
@@ -28,8 +28,8 @@ The host currently cannot enforce Docker memory limits; configured limits are ad
 ## Components and boundaries
 
 ```text
-Matrix / GLM ← egress → Hermes → MCP stdio bridge → pentagon-gateway
-Matrix ← egress → trusted approval listener ───────────────┘
+Telegram / GLM ← egress → Hermes → MCP stdio bridge → pentagon-gateway
+Telegram approval bot ← egress → trusted approval listener ───────────────┘
                                       gateway ├─ Knowledge Router CLI + read-only vault
                                               ├─ private upstream → FlowForge planning API / read-only inspector
                                               └─ operations network → Docker broker
@@ -37,18 +37,18 @@ Matrix ← egress → trusted approval listener ──────────�
 
 No new component publishes a host port. Hermes cannot reach the Docker operations network
 or the FlowForge upstream network. The gateway has no internet egress. The approval listener
-has only its own Matrix credential and the approver credential; neither the broker nor
-FlowForge credential is in that listener. Hermes receives only GLM, Matrix and gateway
+has only its own Telegram bot credential and the approver credential; neither the broker nor
+FlowForge credential is in that listener. Hermes receives only GLM, its conversation-bot and gateway
 credentials. It has no host checkout/home, SSH key, Docker socket or unrestricted shell.
 Native file, terminal, code execution, browser, delegation and debugging tools are disabled;
-Matrix/CLI/cron selections explicitly choose the personal MCP tools and selected native
+Telegram/CLI/cron selections explicitly choose the personal MCP tools and selected native
 memory/scheduling tools plus native skill discovery/loading. Verify effective selections
 when upgrading Hermes.
 
 Telegram adds only a dedicated bot credential and an outbound long-polling adapter.
 Its model toolsets are `memory`, `session_search`, `clarify`, `mcp-personal` and
 `homelab-skills-read`; the fifteen MCP tools and gateway approval policy are unchanged.
-Telegram cannot manage cron jobs through model tools or native slash commands.
+Telegram can manage native cron through model tools; administrative slash commands remain restricted.
 
 Only the broker mounts Docker's socket. A `:ro` socket mount **does not prevent Docker API
 writes**: the authenticated narrow handler and network isolation are the protection. This
@@ -66,10 +66,10 @@ From `apps/hermes`, use the private `.env` based on `.env.example` (mode 600).
 
 - `HERMES_IMAGE`: pin the tested ARM64 image by digest after acceptance.
 - `GLM_API_KEY`: GLM Coding Plan key. The example uses `zai`, `glm-5.3` and the global Coding Plan endpoint; change it for your account/model.
-- `MATRIX_ACCESS_TOKEN`: the bot token, currently the shared homelab account.
-- `MATRIX_ALLOWED_USERS`: comma-separated user IDs permitted to trigger/approve requests.
-- `MATRIX_ALLOWED_ROOMS`: rooms available for interaction.
-- `MATRIX_HOME_ROOM`: one exact room ID for scheduled results and approvals.
+- `TELEGRAM_BOT_TOKEN`: the dedicated Hermes conversation bot.
+- `TELEGRAM_APPROVAL_BOT_TOKEN`: a **different bot**, used only by the trusted relay.
+- `TELEGRAM_ALLOWED_USERS`: positive numeric Telegram user IDs; private DMs only.
+- `TELEGRAM_HOME_CHAT_ID`: one allowed user ID; private approvals and scheduled delivery destination.
 - `GATEWAY_TOKEN`, `APPROVER_TOKEN`, `BROKER_TOKEN`, `FLOWFORGE_TOKEN`, `FLOWFORGE_INSPECT_TOKEN`: five distinct random tokens, at least 32 characters. Generate with `openssl rand -hex 32`.
 - `DOCKER_GID`: host socket group from `stat -c %g /var/run/docker.sock` (984 on this host).
 - `FLOWFORGE_URL`: `http://flowforge-api:8082`.
@@ -77,7 +77,7 @@ From `apps/hermes`, use the private `.env` based on `.env.example` (mode 600).
 
 Build the Mentory and homelab source projections using the refresh commands in
 **Knowledge scope, audit and metrics** below before starting the gateway.
-Create `data/hermes`, `data/pentagon-gateway`, `data/matrix-approvals` and
+Create `data/hermes`, `data/pentagon-gateway`, `data/telegram-approvals` and
 `data/flowforge-api`. The three custom-service state directories must be writable by
 UID/GID 1000 with mode 700. Build the existing Knowledge Router with its own `npm ci` and
 `npm run build`; its pure-JavaScript runtime dependencies and `dist` must be available.
@@ -85,7 +85,7 @@ Do not overwrite an existing `.env` with the example: it contains live credentia
 
 ```bash
 docker compose config --quiet
-docker compose build pentagon-gateway matrix-approvals flowforge-api flowforge-inspect homelab-broker
+docker compose build pentagon-gateway telegram-approvals flowforge-api flowforge-inspect homelab-broker
 docker compose up -d
 docker compose ps
 ```
@@ -96,7 +96,70 @@ token, URL and disposable Python cache path using native interpolation. A direct
 bridge test alone misses this boundary.
 Core configuration, identity and bridge files are read-only mounts.
 
-## Telegram alongside Matrix (TG-02)
+## Telegram-only setup
+
+Current agent Compose no longer requires or forwards Matrix settings. Other homelab
+Matrix services and monitoring are independent and are not removed by this change.
+The older Matrix and TG-02/TG-04 sections below describe historical deployments;
+they do not override this Telegram-only setup.
+
+Create **two different bots** with BotFather. Put both tokens privately in `.env`;
+never share a token between Hermes and the approval relay: each bot has one poller.
+Open both bots in the chosen user's private DM and press Start. Disable bot group
+joining and inline mode and retain group privacy. Set `TELEGRAM_ALLOWED_USERS` and
+`TELEGRAM_HOME_CHAT_ID` to the intended numeric user IDs, with the home ID included
+in the allowed list. `TELEGRAM_HOME_CHANNEL` is pinned by Compose to that home ID
+for native scheduled results. Telegram model tools now include `cronjob`; native
+cron/admin slash commands remain blocked. Use a fresh user-controlled session
+for new tool instructions. Existing Matrix-targeted cron jobs are retained and
+must be individually reviewed; this change does not rewrite saved jobs.
+
+The private `../pentagon-gateway/policy.json` is mounted by gateway and broker.
+Create it from the template only when absent, then review local rules. Never commit it.
+Use `docker compose config --quiet` without rendering credentials. Fresh gateway
+and relay state is authorized for this recovery; keep `data/telegram-approvals`
+UID/GID 1000 and mode 0700. Retain old Matrix relay state untouched for review.
+
+`telegram-approvals` posts every argument and session context before approval;
+oversize actions get no approval controls. Only an allowed human in the home DM
+can use a button bound to that prompt, or reply to it with `!approve <ID>` or
+`!reject <ID>`. Edits, unknown users, groups, bots, stale commands and reused
+prompts are rejected. Decisions/cursors and execution attempts are persisted before
+acknowledgment/dispatch. The gateway still consumes the exact stored action once.
+
+Telegram sends have no client transaction-ID deduplication. Each message/document
+has a durable send claim; interrupted or ambiguous sends become `uncertain` and
+are **not automatically resent**. Only explicit Telegram 429 rejections get up to
+three attempts with bounded delay. Planning output is fetched only through the
+gateway's sanitized workflow route, frozen in private relay state and sent as
+complete Markdown documents. Incomplete attachments retain a failure and bounded
+text fallback; no planning run is replayed to repair delivery. Review uncertain
+claims with the relay stopped and its state backed up. Do not delete claims or
+restore stale state to force retries. Configuration changes to relay bot/home
+identity are rejected when retained state belongs to another identity. Run only
+one relay instance; no multi-host coordination is claimed.
+
+For cutover, validate current-image native tool registration/authorization before
+starting adapters (a new `stable` tag is not the old accepted image). Check work is
+idle, then stop the old `matrix-approvals` service using its previous Compose
+configuration if it exists; do not use broad `--remove-orphans`. Build/recreate
+only gateway, Hermes and the new relay as needed. Broker policy content is unchanged.
+Verify health, native registration, Telegram conversation, authorized approval and
+rejection, unknown-user/group rejection, scheduled delivery and sanitized plan
+attachments. Unit tests do not prove these live flows. No real restart/paid planning
+request is required just to validate transport; use an explicitly authorized action.
+Rollback requires the previous Compose/config plus retained native/relay state;
+never have two processes polling one bot or two relays executing the same approval.
+Telegram evidence fields are additive; historical Matrix decisions and gateway
+approval/run/audit records remain readable. Telegram state uses its own version-1
+file and does not import Matrix decisions or delivery claims.
+
+References: [Telegram Bot API](https://core.telegram.org/bots/api),
+[Hermes Telegram home channel](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/telegram).
+Installed-image verification remains necessary for the version-dependent native guard.
+
+## Historical Telegram alongside Matrix (TG-02)
+
 
 TG-02 prepared this configuration; [TG-04 deployed it alongside Matrix](../../reports/2026-11-25-hermes-telegram-tg04.md)
 on 2026-11-25 after operator approval. Full live acceptance remains pending.

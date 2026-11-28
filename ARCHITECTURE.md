@@ -41,7 +41,7 @@ Coturn and its configuration were removed on 2026-10-11. Synapse has no configur
 
 # Personal Agent
 
-Hermes uses GLM and Matrix through outbound connections. CLI, Matrix and cron
+The current Hermes configuration uses GLM and Telegram through outbound connections. CLI, Telegram and cron
 share an explicit personal MCP tool selection:
 
 ```text
@@ -57,14 +57,15 @@ trusted approval process still decide whether a requested restart may execute.
 The diagnosis skill discovers coverage when needed and requires the user to
 resolve genuinely ambiguous targets.
 
-The trusted Matrix approval listener polls the approved planning run through the
-gateway, then sends one deterministic completion notice and full UTF-8 Markdown
-attachments from the sanitized response. It never reads raw FlowForge output
-files or calls a model to summarize plans. Its durable state stores sanitized
-contents, upload claims, media URIs and event acknowledgments; uncertain uploads
-stop for review, while message retries reuse stable Matrix transactions.
-Incomplete delivery retains a failure record and bounded text fallback. See
-[delivery and recovery](apps/hermes/README.md#planning-result-delivery).
+The trusted Telegram approval listener uses a second bot, separate from Hermes'
+conversation bot, and accepts decisions only from the configured user in their
+private home chat. It polls approved planning runs through the gateway and sends
+full UTF-8 Markdown attachments from sanitized responses. It never reads raw
+runner output or asks a model to summarize plans. Durable send claims prevent
+automatic replay of ambiguous sends/uploads; incomplete delivery retains a failure
+record and bounded text fallback. See [Telegram-only setup](apps/hermes/README.md#telegram-only-setup)
+for cutover and recovery. Historical Matrix agent evidence does not establish live
+acceptance of this replacement. Other homelab Matrix services remain independent.
 
 The stack is deployed through `apps/hermes/docker-compose.yml` without published
 host ports. Only the broker has a Docker socket; Hermes cannot reach its

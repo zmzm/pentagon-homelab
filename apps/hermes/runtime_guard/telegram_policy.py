@@ -24,6 +24,12 @@ class TelegramPolicy:
                 and not getattr(source, 'is_bot', False))
 
 
+def validate_home_channel(allowed_users, home_channel):
+    policy = TelegramPolicy(allowed_users)
+    if home_channel and home_channel not in policy.allowed_users:
+        raise ValueError('Telegram home channel must be an allowed private user ID')
+
+
 def install(allowed_users):
     policy = TelegramPolicy(allowed_users)
     from gateway.authz_mixin import GatewayAuthorizationMixin

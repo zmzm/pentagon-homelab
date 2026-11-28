@@ -11,6 +11,7 @@
 /.codex/
 
 # Secrets and local environment
+/apps/pentagon-gateway/policy.json
 .env
 .env.*
 *.env

@@ -8,10 +8,16 @@ import unittest
 
 GUARD = Path(__file__).resolve().parents[1] / 'apps/hermes/runtime_guard'
 sys.path.insert(0, str(GUARD))
-from telegram_policy import TelegramPolicy
+from telegram_policy import TelegramPolicy, validate_home_channel
 
 
 class TelegramPolicyTests(unittest.TestCase):
+    def test_home_channel_cannot_target_groups_or_unlisted_users(self):
+        validate_home_channel('123456', '123456')
+        for home in ('-100123', '654321', '*'):
+            with self.assertRaises(ValueError):
+                validate_home_channel('123456', home)
+
     def test_numeric_user_lists(self):
         for value in ('123456', '123456,789012', ' 123456 , 789012 '):
             with self.subTest(value=value):

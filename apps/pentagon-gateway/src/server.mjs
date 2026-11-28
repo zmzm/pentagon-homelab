@@ -118,7 +118,7 @@ export function createGateway({ env, policy, execute = executor(env, policy), st
             approvalId: request.id,
             expiresAt: request.expiresAt,
             message:
-              'A trusted listener posts the exact action in Matrix. The authorized user can tap the seeded ✅ (approve) or ❌ (reject) reaction on that prompt, or use !approve <approvalId> / !reject <approvalId>. Execution and results are handled by that listener; do not create a second request.',
+              'The trusted Telegram approval bot posts the exact action in the private home chat. Use Approve/Reject on that prompt, or reply to it with !approve <approvalId> / !reject <approvalId>. The listener executes and delivers results; do not create a second request.',
           };
         }
         const record = load(approvalId);
@@ -253,13 +253,33 @@ export function createGateway({ env, policy, execute = executor(env, policy), st
         }
         check(!match[2], 'NOT_FOUND', 404);
         const decision = await body(req);
-        object(decision, ['approve', 'operator', 'matrixEventId', 'matrixRoomId', 'promptEventId']);
+        object(decision, [
+          'approve',
+          'operator',
+          'matrixEventId',
+          'matrixRoomId',
+          'promptEventId',
+          'telegramUpdateId',
+          'telegramChatId',
+          'telegramPromptMessageId',
+        ]);
         check(typeof decision.approve === 'boolean');
         str(decision.operator, 100);
         if (decision.matrixEventId !== undefined) {
           str(decision.matrixEventId, 255);
           str(decision.matrixRoomId, 255);
           str(decision.promptEventId, 255);
+        }
+        if (
+          ['telegramUpdateId', 'telegramChatId', 'telegramPromptMessageId'].some(
+            (key) => decision[key] !== undefined,
+          )
+        ) {
+          check(decision.matrixEventId === undefined);
+          for (const key of ['telegramUpdateId', 'telegramChatId', 'telegramPromptMessageId']) {
+            str(decision[key], 20);
+            check(/^[0-9]+$/.test(decision[key]));
+          }
         }
         check(
           record.status === 'PENDING' && record.expiresAt > Date.now(),
@@ -278,6 +298,9 @@ export function createGateway({ env, policy, execute = executor(env, policy), st
           matrixEventId: decision.matrixEventId,
           matrixRoomId: decision.matrixRoomId,
           promptEventId: decision.promptEventId,
+          telegramUpdateId: decision.telegramUpdateId,
+          telegramChatId: decision.telegramChatId,
+          telegramPromptMessageId: decision.telegramPromptMessageId,
           event: 'approval_decision',
           approvalId: record.id,
         });

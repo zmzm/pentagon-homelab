@@ -26,7 +26,11 @@ Service restarts and updates require task authorization and component checks.
 
 # Personal Agent Discovery and Diagnosis
 
-The Hermes personal-agent stack runs from `apps/hermes`. Use read-only
+The Hermes personal-agent stack runs from `apps/hermes`. Its current configuration is
+Telegram-only, with a separate private approval bot; follow [the Telegram-only setup](apps/hermes/README.md#telegram-only-setup).
+Historical Matrix agent procedures below do not apply to this replacement.
+Homelab Matrix monitoring and other Matrix services remain independent.
+ Use read-only
 `homelab_list_services` to discover configured tool coverage when a service
 identifier is unknown or available coverage is needed. It reads gateway
 `policy.services`, returning only identifiers and restart levels; it does not
@@ -43,7 +47,7 @@ docker compose exec -T hermes python - < ../../scripts/verify_hermes_tool_regist
 docker compose exec -T hermes python - < ../../scripts/verify_hermes_mcp.py
 ```
 
-The first check verifies the configured personal MCP tools for CLI, Matrix and cron plus
+The first check verifies the configured personal MCP tools for CLI, Telegram and cron plus
 the curated diagnosis skill. The second reads policy coverage and performs the
 existing Vaultwarden inspection; it does not request a restart or approval.
 See [API, authentication and targeted rollout steps](apps/hermes/README.md#service-discovery-and-rollout)

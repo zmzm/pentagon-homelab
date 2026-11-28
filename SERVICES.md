@@ -72,10 +72,10 @@ ports. Their source and persistent data are separate from the core services.
 
 | Component | Purpose | Source | Data location |
 | --- | --- | --- | --- |
-| Hermes | Matrix conversation, CLI and conversational schedules | `apps/hermes` | `data/hermes` |
+| Hermes | Telegram conversation, CLI and conversational schedules | `apps/hermes` | `data/hermes` |
 | Pentagon Gateway | Authenticated tool API, policy discovery, audit and approvals | `apps/pentagon-gateway` | `data/pentagon-gateway` |
 | Homelab broker | Allowlisted Docker inspection, logs and restart execution | `apps/pentagon-gateway` | none |
-| Matrix approval listener | Trusted approval verification, exact-action execution and sanitized planning-result attachments | `apps/pentagon-gateway` | `data/matrix-approvals` |
+| Telegram approval listener | Separate bot for trusted private-chat approvals, exact-action execution and sanitized planning-result attachments | `apps/pentagon-gateway` | `data/telegram-approvals` |
 | FlowForge inspector | Read-only registered projects, catalogs, queue records, doctor and sync preview | `apps/flowforge/inspector.py` | None; native sources mounted read-only |
 | FlowForge planning API | Planning around the existing workflow runner | `apps/flowforge` | `data/flowforge-api` |
 
@@ -136,7 +136,7 @@ Real `.env` files are ignored by Git. Tracked example files:
 | `apps/matrix/.env.example` | `MATRIX_POSTGRES_PASSWORD` |
 | `apps/pihole-adapter/.env.example` | `PIHOLE_BASE_URL`, `PIHOLE_PASSWORD`, `REQUEST_TIMEOUT`, `SUMMARY_CACHE_TTL` |
 | `apps/portainer/.env.example` | `PORTAINER_HOMEPAGE_WIDGET_KEY` |
-| `apps/hermes/.env.example` | Provider/Matrix settings and distinct gateway, approver, broker and FlowForge credentials; see the [Hermes configuration guide](apps/hermes/README.md#configuration-and-deployment) |
+| `apps/hermes/.env.example` | Provider settings, separate Telegram conversation/approval bots and distinct gateway, approver, broker and FlowForge credentials; see the [Hermes configuration guide](apps/hermes/README.md#configuration-and-deployment) |
 
 Runtime `.env` files are local prerequisites; their presence and contents are not
 established by this inventory.
