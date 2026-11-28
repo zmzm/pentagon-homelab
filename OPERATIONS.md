@@ -319,7 +319,7 @@ systemctl list-timers homelab-monitor.timer
 sudo python3 -B scripts/monitor.py --check
 ```
 
-The legacy Matrix status timer is disabled for Telegram-only monitoring. Telegram monitoring has no status-command listener. See [monitoring setup](monitoring/README.md) for configuration, installation, and coverage limits. Use `btop` and `df -h` for manual resource checks.
+The legacy Matrix status timer is disabled for Telegram-only monitoring. Use `/status` or `!status` in the monitoring bot private chat for a fresh report, including RAM. The Menu button lists `/status`; its separate timer polls every 15 seconds. See [monitoring setup](monitoring/README.md) for configuration, installation, and coverage limits. Use `btop` and `df -h` for manual resource checks.
 
 # Ansible Host Preparation
 

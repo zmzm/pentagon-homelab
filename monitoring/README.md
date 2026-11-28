@@ -10,8 +10,9 @@ it does not read Matrix credentials or send new Matrix alerts. Legacy Matrix que
 records remain intact. The Matrix setup and dual-channel acceptance below describe
 historical deployments. Telegram state schema 1, credentials and retry behavior are
 unchanged. `matrix_status.py` remains compatible with retained Matrix settings but
-its timer must stay disabled; Telegram monitoring is outbound-only and has no
-`!status` command. Use `sudo python3 -B scripts/monitor.py --check` for details.
+its timer must stay disabled. Telegram now has its own private status listener;
+use `/status` (or `!status`) in the monitoring bot chat, or run
+`sudo python3 -B scripts/monitor.py --check` locally.
 
 Restore the root-owned 0600 `data/monitoring/telegram.env` before activation.
 The scheduled-jobs Ansible role accepts this configuration, validates Telegram
@@ -31,6 +32,52 @@ checks remain selected independently of alert transport; missing services/backup
 still produce alerts. Changing their coverage requires a separate explicit decision.
 Rollback selects `notification.type: matrix` only after restoring valid Matrix
 credentials; preserve both delivery queues and their uncertain claims.
+
+## Telegram status command and menu
+
+The monitoring bot's **Menu** button lists `/status`. Both `/status` and `!status`
+return fresh configured service, endpoint, disk and backup checks, plus host RAM
+usage from `/proc/meminfo` (used = total minus available). Healthy container
+running state still does not establish application health or backup recovery.
+The timestamp uses Europe/Warsaw. Unlike automatic category/count summaries,
+this explicitly requested report includes configured service names and check
+details. It never includes credentials, logs or raw provider errors. Reports are
+HTML-escaped and bounded; exceptionally large inventories show an omission note.
+
+Only a fresh, original message from the configured numeric human user in that
+same private chat qualifies. Bots, groups, other users, forwarded/edited messages
+and arbitrary commands are ignored. No model, shell command text or gateway write
+is invoked. The menu is scoped to this private chat, not all bot users.
+
+`homelab-telegram-status.timer` polls every 15 seconds. One fresh report answers a
+burst of commands in a poll; the first poll discards historical updates. This is
+the only poller for the monitoring bot; keep Hermes and approval bots separate.
+An existing webhook causes failure rather than automatic deletion.
+
+The separate root-only `/var/lib/homelab-monitor/telegram-status.json` uses schema 1
+and binds bot/recipient identity, incoming cursor and frozen reply text. A host-local
+lock serializes listener runs. Cursor/reply intent and send claims are saved before
+dispatch. Interrupted or ambiguous sends are held as uncertain, never automatically
+replayed; send a new command for a new report. Only explicit rate-limit rejections
+retry, at most three attempts with delay. Up to 100 pending/held replies are retained;
+a full queue stops cursor advancement while eligible work drains. Review held state
+with the listener stopped; never delete delivery claims to force a replay. Existing
+alert/reminder state, Matrix status records and Telegram alert state are unchanged.
+
+Install just the listener/menu on an existing configured host:
+
+```bash
+sudo systemd-analyze verify monitoring/homelab-telegram-status.service monitoring/homelab-telegram-status.timer
+sudo python3 -B scripts/telegram_status.py --configure-menu
+sudo install -m 0644 monitoring/homelab-telegram-status.service monitoring/homelab-telegram-status.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start homelab-telegram-status.service
+sudo systemctl enable --now homelab-telegram-status.timer
+```
+
+The scheduled-jobs Ansible role also includes this listener when Telegram is enabled.
+Rollback stops/disables `homelab-telegram-status.timer` and retains its private state;
+automatic alerts continue independently. API reference: [Telegram Bot API](https://core.telegram.org/bots/api#setchatmenubutton).
 
 ## Coverage
 

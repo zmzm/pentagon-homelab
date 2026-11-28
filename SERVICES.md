@@ -44,7 +44,7 @@ coverage, not a live health report; dated deployment evidence is linked separate
 
 # Monitoring
 
-A host systemd timer, `homelab-monitor.timer`, runs `scripts/monitor.py` every five minutes. It checks disk space, twelve configured containers, Matrix/Vaultwarden HTTP health, Backrest backup freshness, Matrix database dumps and scheduled recovery evidence. Alerts use a separate Telegram monitoring bot and local journal logging. Telegram sends severity/category summaries; detailed diagnostics stay local. The old Matrix `!status` listener is disabled for Telegram-only monitoring. The configured checks exclude the Hermes stack and SmallTV; independent external monitoring remains [deferred](monitoring/EXTERNAL_MONITORING.md). See [monitoring setup](monitoring/README.md) for configuration and evidence limits.
+A host systemd timer, `homelab-monitor.timer`, runs `scripts/monitor.py` every five minutes. It checks disk space, twelve configured containers, Matrix/Vaultwarden HTTP health, Backrest backup freshness, Matrix database dumps and scheduled recovery evidence. Alerts use a separate Telegram monitoring bot and local journal logging. Telegram sends severity/category summaries; detailed diagnostics stay local. The old Matrix `!status` listener is disabled for Telegram-only monitoring; the private Telegram bot offers `/status` through its command menu, with fresh checks and RAM usage. The configured checks exclude the Hermes stack and SmallTV; independent external monitoring remains [deferred](monitoring/EXTERNAL_MONITORING.md). See [monitoring setup](monitoring/README.md) for configuration and evidence limits.
 
 ---
 

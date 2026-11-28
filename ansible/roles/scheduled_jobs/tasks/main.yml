@@ -232,6 +232,29 @@
     path: /etc/systemd/system/homelab-matrix-status.timer
   register: homelab_scheduled_matrix_status_timer
 
+- name: Configure and verify the private Telegram command menu
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -B, "{{ homelab_repo_path }}/scripts/telegram_status.py", --configure-menu]
+  changed_when: false
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - homelab_scheduled_monitor_config.notification.telegram.enabled | default(false)
+
+- name: Inspect the Telegram status timer for rollback
+  ansible.builtin.stat:
+    path: /etc/systemd/system/homelab-telegram-status.timer
+  register: homelab_scheduled_telegram_status_timer
+
+- name: Disable Telegram commands when Telegram monitoring is disabled
+  ansible.builtin.systemd_service:
+    name: homelab-telegram-status.timer
+    enabled: false
+    state: stopped
+  when:
+    - not (homelab_scheduled_monitor_config.notification.telegram.enabled | default(false))
+    - homelab_scheduled_telegram_status_timer.stat.exists
+
 - name: Disable legacy Matrix commands for Telegram-only monitoring
   ansible.builtin.systemd_service:
     name: homelab-matrix-status.timer
