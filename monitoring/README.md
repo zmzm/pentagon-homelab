@@ -2,6 +2,36 @@
 
 `homelab-monitor.timer` runs `scripts/monitor.py` every five minutes. The process exits after each run; there is no metrics agent or dashboard. Configuration is in `monitoring/config.json`.
 
+## Current Telegram-only configuration (2026-11-28)
+
+`notification.type` is now `journal` with `notification.telegram.enabled: true`.
+The monitor keeps detailed local journal entries and sends bounded Telegram summaries;
+it does not read Matrix credentials or send new Matrix alerts. Legacy Matrix queue
+records remain intact. The Matrix setup and dual-channel acceptance below describe
+historical deployments. Telegram state schema 1, credentials and retry behavior are
+unchanged. `matrix_status.py` remains compatible with retained Matrix settings but
+its timer must stay disabled; Telegram monitoring is outbound-only and has no
+`!status` command. Use `sudo python3 -B scripts/monitor.py --check` for details.
+
+Restore the root-owned 0600 `data/monitoring/telegram.env` before activation.
+The scheduled-jobs Ansible role accepts this configuration, validates Telegram
+credentials and omits/disables the Matrix status timer. Its full backup/recovery
+prerequisites still apply. To install only alert monitoring on an existing host:
+
+```bash
+sudo systemd-analyze verify monitoring/homelab-monitor.service monitoring/homelab-monitor.timer
+sudo install -m 0644 monitoring/homelab-monitor.service monitoring/homelab-monitor.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start homelab-monitor.service
+sudo systemctl enable --now homelab-monitor.timer
+```
+
+This does not install backup or recovery timers. Existing Matrix service/database
+checks remain selected independently of alert transport; missing services/backups
+still produce alerts. Changing their coverage requires a separate explicit decision.
+Rollback selects `notification.type: matrix` only after restoring valid Matrix
+credentials; preserve both delivery queues and their uncertain claims.
+
 ## Coverage
 
 - Root filesystem: warning at 85% used; critical at 95% used or less than 2 GiB free.
@@ -13,7 +43,7 @@
 
 The checks cover the repository's containers, not unrelated application projects on this host. They do not prove database recoverability, backup repository integrity, DNS correctness, or public Matrix/Cloudflare availability. A stopped host cannot report its own outage; external monitoring would be needed for that.
 
-## Alert delivery
+## Historical Matrix alert delivery
 
 Delivery is active in the private **Server alerts** Matrix room, without end-to-end encryption as requested. The existing `@homelab:pentagonlab.org` bot invited `@vladjik:pentagonlab.org`. Accept the invitation in Matrix. The FlowForge control room and its configuration were left unchanged.
 

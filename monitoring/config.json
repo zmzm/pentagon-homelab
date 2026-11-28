@@ -40,7 +40,7 @@
     "maximum_age_hours": 36
   },
   "notification": {
-    "type": "matrix",
+    "type": "journal",
     "credentials_file": "data/monitoring/matrix.json",
     "allowed_users": [
       "@vladjik:pentagonlab.org"

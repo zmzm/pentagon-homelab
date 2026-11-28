@@ -44,7 +44,7 @@ coverage, not a live health report; dated deployment evidence is linked separate
 
 # Monitoring
 
-A host systemd timer, `homelab-monitor.timer`, runs `scripts/monitor.py` every five minutes. It checks disk space, twelve managed containers, Matrix/Vaultwarden HTTP health, and Backrest backup results/freshness. Matrix alerts are active in the private, unencrypted **Server alerts** room, alongside local journal logging. This service is managed outside Docker Compose. Send `!status` in **Server alerts** for a fresh health report; a separate lightweight timer checks for authorized requests every 15 seconds. Matrix PostgreSQL dumps run hourly and are checked for freshness. Weekly isolated recovery verification is monitored too. The twelve configured container checks exclude the Hermes stack and SmallTV; independent external monitoring remains [deferred](monitoring/EXTERNAL_MONITORING.md). See [database backups](OPERATIONS.md#matrix-database-backups) and [monitoring setup](monitoring/README.md).
+A host systemd timer, `homelab-monitor.timer`, runs `scripts/monitor.py` every five minutes. It checks disk space, twelve configured containers, Matrix/Vaultwarden HTTP health, Backrest backup freshness, Matrix database dumps and scheduled recovery evidence. Alerts use a separate Telegram monitoring bot and local journal logging. Telegram sends severity/category summaries; detailed diagnostics stay local. The old Matrix `!status` listener is disabled for Telegram-only monitoring. The configured checks exclude the Hermes stack and SmallTV; independent external monitoring remains [deferred](monitoring/EXTERNAL_MONITORING.md). See [monitoring setup](monitoring/README.md) for configuration and evidence limits.
 
 ---
 

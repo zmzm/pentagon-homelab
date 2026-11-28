@@ -1,9 +1,6 @@
 ---
-homelab_scheduled_job_names:
-  - homelab-monitor
-  - homelab-matrix-status
-  - homelab-matrix-backup
-  - homelab-recovery
+# Matrix commands are installed only while Matrix alert delivery is selected.
+homelab_scheduled_job_names: "{{ ['homelab-monitor', 'homelab-matrix-backup', 'homelab-recovery'] + (['homelab-matrix-status'] if homelab_scheduled_monitor_config.notification.type == 'matrix' else []) }}"
 
 homelab_scheduled_job_scripts:
   - monitor.py

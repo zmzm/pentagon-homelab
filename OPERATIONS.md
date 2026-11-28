@@ -312,15 +312,14 @@ external reachability. Record incidents with [the incident template](INCIDENT_TE
 
 # System Monitoring
 
-Automated checks run every five minutes through `homelab-monitor.timer`. Disk warnings start at 85% used; critical alerts start at 95% used or less than 2 GiB free. Failed/warning backups and successful backups older than 36 hours are reported alongside container and Matrix/Vaultwarden health problems. Alerts appear in local journal and the private, unencrypted Matrix room **Server alerts**. The bot uses `@homelab:pentagonlab.org`; room and authorized-user settings are documented in the monitoring guide. Failed deliveries retry on subsequent checks.
-
+Automated checks run every five minutes through `homelab-monitor.timer`. Disk warnings start at 85% used; critical alerts start at 95% used or less than 2 GiB free. Backup, container and endpoint checks remain unchanged. Alerts go to the configured private Telegram chat and local journal. Telegram summaries omit free-text diagnostics; inspect the journal or run the read-only check below for details. The private credential file is `data/monitoring/telegram.env` (root-owned, mode 0600). Failed or ambiguous sends follow the bounded retry/review rules in the monitoring guide.
 ```bash
 sudo journalctl -u homelab-monitor.service --since today
 systemctl list-timers homelab-monitor.timer
 sudo python3 -B scripts/monitor.py --check
 ```
 
-Send `!status` in **Server alerts** for a fresh health report; a separate lightweight timer checks for authorized requests every 15 seconds. See [monitoring setup](monitoring/README.md) for configuration, installation, and coverage limits. Use `btop` and `df -h` for manual resource checks.
+The legacy Matrix status timer is disabled for Telegram-only monitoring. Telegram monitoring has no status-command listener. See [monitoring setup](monitoring/README.md) for configuration, installation, and coverage limits. Use `btop` and `df -h` for manual resource checks.
 
 # Ansible Host Preparation
 

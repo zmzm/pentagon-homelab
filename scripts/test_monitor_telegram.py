@@ -333,6 +333,29 @@ class MonitorIntegration(unittest.TestCase):
             self.assertNotIn(TOKEN, str(send.call_args_list[0].args[2]))
             self.assertEqual(json.loads((root / 'state.json').read_text())['pending'], [])
 
+    def test_journal_mode_delivers_telegram_without_matrix_credentials_and_retains_old_queue(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = {'reminder_hours': 6, 'notification': {
+                'type': 'journal', 'telegram': CONFIG}}
+            (root / CONFIG['credentials_file']).write_text(json.dumps({'bot_token': TOKEN}))
+            (root / CONFIG['credentials_file']).chmod(0o600)
+            pending = [{'transaction_id': 'retained-matrix-id', 'body': 'Old Matrix alert'}]
+            monitor.save_state(root / 'state.json', {'checks': {}, 'pending': pending})
+            problem = {'disk': {'level': 'critical', 'message': 'private problem'}}
+            recovery = {'disk': {'level': 'ok', 'message': 'private recovery'}}
+            with patch.object(monitor, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()), \
+                 patch.object(monitor, 'collect', side_effect=[problem, problem, recovery]), \
+                 patch.object(monitor.time, 'time', side_effect=[1000, 1001, 1002]), \
+                 patch.object(monitor, 'send_matrix') as matrix, \
+                 patch.object(telegram, 'send', return_value=('confirmed', 0)) as send:
+                for _ in range(3):
+                    self.assertEqual(monitor.run_monitor(config, root), 0)
+            matrix.assert_not_called()
+            self.assertEqual(send.call_count, 2)
+            self.assertEqual(json.loads((root / 'state.json').read_text())['pending'], pending)
+            self.assertEqual(json.loads((root / 'telegram.json').read_text())['pending'], [])
+
     def test_bad_telegram_configuration_does_not_block_matrix_and_logs_no_secret(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

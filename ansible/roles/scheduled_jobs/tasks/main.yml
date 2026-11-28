@@ -11,12 +11,13 @@
   ansible.builtin.set_fact:
     homelab_scheduled_monitor_config: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../monitoring/config.json') | from_json }}"
 
-- name: Require the supported Matrix notification configuration
+- name: Require a supported notification configuration
   ansible.builtin.assert:
     that:
-      - homelab_scheduled_monitor_config.notification.type == 'matrix'
-      - homelab_scheduled_monitor_config.notification.credentials_file == 'data/monitoring/matrix.json'
-      - homelab_scheduled_monitor_config.notification.allowed_users | length > 0
+      - homelab_scheduled_monitor_config.notification.type in ['matrix', 'journal']
+      - homelab_scheduled_monitor_config.notification.type == 'matrix' or homelab_scheduled_monitor_config.notification.telegram.enabled | default(false)
+      - homelab_scheduled_monitor_config.notification.type != 'matrix' or homelab_scheduled_monitor_config.notification.credentials_file == 'data/monitoring/matrix.json'
+      - homelab_scheduled_monitor_config.notification.type != 'matrix' or homelab_scheduled_monitor_config.notification.allowed_users | length > 0
       - homelab_scheduled_monitor_config.database_dump.path == 'data/matrix/database-backup/synapse.dump'
       - homelab_scheduled_monitor_config.recovery_test.status_file == '/var/lib/homelab-recovery/status.json'
     fail_msg: Review the role prerequisites when changing monitoring credential or database dump paths.
@@ -27,7 +28,7 @@
     follow: false
   loop:
     - "{{ homelab_data_path }}/monitoring"
-    - "{{ homelab_data_path }}/monitoring/matrix.json"
+    - "{{ homelab_repo_path }}/{{ homelab_scheduled_monitor_config.notification.credentials_file if homelab_scheduled_monitor_config.notification.type == 'matrix' else homelab_scheduled_monitor_config.notification.telegram.credentials_file }}"
     - "{{ homelab_homepage_ca_path }}"
     - "{{ homelab_data_path }}/backrest/config/config.json"
     - "{{ homelab_backups_path }}/restic/config"
@@ -38,7 +39,7 @@
     that:
       - homelab_scheduled_recovery_files.results[0].stat.isdir | default(false)
       - not (homelab_scheduled_recovery_files.results[0].stat.islnk | default(false))
-    fail_msg: Restore data/monitoring and its Matrix credentials from backup first.
+    fail_msg: Restore data/monitoring and its configured notification credentials first.
 
 - name: Require restored notification credentials and Caddy CA files
   ansible.builtin.assert:
@@ -85,6 +86,7 @@
   changed_when: false
   check_mode: false
   no_log: true
+  when: homelab_scheduled_monitor_config.notification.type == 'matrix'
 
 - name: Verify required executables
   ansible.builtin.command:
@@ -180,7 +182,7 @@
 
 - name: Restrict restored notification credentials without changing their content
   ansible.builtin.file:
-    path: "{{ homelab_data_path }}/monitoring/matrix.json"
+    path: "{{ homelab_repo_path }}/{{ homelab_scheduled_monitor_config.notification.credentials_file if homelab_scheduled_monitor_config.notification.type == 'matrix' else homelab_scheduled_monitor_config.notification.telegram.credentials_file }}"
     owner: root
     group: root
     mode: '0600'
@@ -201,6 +203,43 @@
     owner: "{{ homelab_owner }}"
     group: "{{ homelab_group }}"
     mode: '0644'
+
+- name: Validate enabled Telegram credentials without displaying their contents
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -B
+      - -c
+      - |
+        import json, sys
+        from pathlib import Path
+        root = Path(sys.argv[1])
+        sys.path.insert(0, str(root / 'scripts'))
+        from monitor_telegram import resolve_config, load_credentials
+        config = json.loads((root / 'monitoring/config.json').read_text())
+        telegram = resolve_config(config['notification']['telegram'], root)
+        load_credentials(root / telegram['credentials_file'], telegram['bot_id'])
+      - "{{ homelab_repo_path }}"
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - homelab_scheduled_monitor_config.notification.telegram.enabled | default(false)
+
+- name: Inspect the legacy Matrix status timer
+  ansible.builtin.stat:
+    path: /etc/systemd/system/homelab-matrix-status.timer
+  register: homelab_scheduled_matrix_status_timer
+
+- name: Disable legacy Matrix commands for Telegram-only monitoring
+  ansible.builtin.systemd_service:
+    name: homelab-matrix-status.timer
+    enabled: false
+    state: stopped
+  when:
+    - homelab_scheduled_monitor_config.notification.type != 'matrix'
+    - homelab_scheduled_matrix_status_timer.stat.exists
 
 # Stage and verify the complete set before replacing any installed unit.
 # In check mode staging is temporary validation only, not a host deployment.
