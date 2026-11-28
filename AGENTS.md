@@ -29,6 +29,27 @@
 | Workflow result delivery | [Result delivery](docs/engineering.md#result-delivery) |
 | Deployment or rollout | [Component-specific rollout](docs/engineering.md#component-specific-rollout) |
 
+## Homelab documentation search
+
+For homelab architecture, services, operations, recovery, or incident questions,
+use Knowledge Router's separate homelab corpus. With the personal-agent MCP
+tools, call `knowledge_search` with `project:"homelab"`, for example
+`{"query":"How are Matrix database backups configured?","project":"homelab"}`.
+The default project searches coding guidance, not homelab documentation.
+
+For host CLI access, resolve `data/knowledge-homelab/current.json`'s `snapshotId`
+and pass `data/knowledge-homelab/snapshots/<snapshotId>/vault` as the router's
+explicit `--vault`, with a writable external `--cache`. Use the configured
+Knowledge Router installation's `scripts/knowledge` launcher when Node is absent
+from PATH. Do not index the whole repository or modify the generated snapshot.
+
+The [homelab knowledge guide](apps/hermes/README.md#homelab-documentation)
+defines the source allowlist, refresh/check commands and citation mapping.
+Cite original `source.reference` values returned by the gateway; direct CLI
+results use projected paths and line numbers, mapped by the snapshot manifest.
+Treat incidents as historical evidence and documentation as recorded state;
+verify current runtime claims with read-only service inspection.
+
 ## Shared Coding Vault
 
 When shared guidance is needed, use the single
