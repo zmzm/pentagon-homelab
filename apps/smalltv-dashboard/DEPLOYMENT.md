@@ -168,3 +168,38 @@ state, real device preflight, a five-second `TEST` warning and the normal POST
 transport; the device acknowledged it and delivery was persisted as confirmed.
 The test state was removed. Original monitoring checks, Matrix messages and
 production alert state were not modified by the test.
+
+## Backend restoration — 2026-11-28
+
+Restored the backend from `/home/pentagon-admin/Projects/pentagon-homelab`
+after confirming that its container, exporter units, public projection and
+private notification-state directory were absent. The device remained online
+at `192.168.0.106` with firmware `3.1.0-homelab.1` and the selected
+`homelab-five-screens` theme; no firmware or theme upload was needed.
+
+Installed and enabled `smalltv-status-export.timer`, started its exporter, and
+created `data/smalltv-dashboard` with mode 0700 and UID/GID 65534. Built and
+started the existing Compose service. Its first startup failed because the
+ignored app-local `.env` set `SMALLTV_BIND_IP` to the device address. Corrected
+that value to the Pi's `192.168.0.185` and started the service successfully.
+Docker again reported that this host cannot enforce the configured memory limit.
+
+Verification:
+
+- All thirty Python behavior tests passed during the pre-deployment diagnosis.
+  Systemd unit verification and Compose configuration validation passed.
+- Live health, original/modern metric feeds, dashboard, weather and notification
+  endpoints returned HTTP 200. Host metrics and weather contained current values.
+- Docker reported the container healthy; the exporter completed successfully
+  and its timer is enabled and active. The backend's Pi-hole adapter request
+  returned online with live DNS statistics.
+- The notification worker reported enabled and recorded a confirmed delivery
+  for six existing monitoring problems. Its state file is mode 0600, UID/GID
+  65534; the exported public summary is mode 0644.
+- A narrowly filtered host network capture observed the device requesting both
+  `/clock.json` and `/dashboard.json`. Physical screen appearance remains
+  unverified.
+
+Existing monitoring failures remain separate from restoring this display:
+Homepage, Matrix containers/HTTP, database dumps and recovery verification had
+non-healthy results. No other service was restarted or reconfigured.
