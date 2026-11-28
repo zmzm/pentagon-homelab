@@ -54,6 +54,18 @@ def call(path: str, session_id: str, user_request: str, payload=None, approval_i
 
 
 @mcp.tool()
+def approval_get_status(approval_id: str, session_id: str, user_request: str):
+    """Read a known approval's decision and execution outcome in its original session.
+    Use after the user reports approving/rejecting or asks for progress. Read-only;
+    never grants approval or executes. PENDING/APPROVED are not completion; CONSUMED
+    means execution was claimed and may be uncertain after interruption. EXPIRED
+    cannot execute. DONE for planning means submitted: inspect outcome.data.run_id
+    with flowforge_get_run. Never retry a write based on this status or poll tightly.
+    """
+    return call(f"/approval-status/{urllib.parse.quote(approval_id, safe='')}", session_id, user_request)
+
+
+@mcp.tool()
 def knowledge_search(query: str, session_id: str, user_request: str,
                      project: str = "mentory", scope: list[str] | None = None, limit: int = 5):
     """Search homelab operational docs/incidents (project=homelab), Mentory completed-task

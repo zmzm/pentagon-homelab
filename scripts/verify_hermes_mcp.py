@@ -1,4 +1,4 @@
-"""Run inside Hermes: real MCP handshake, fifteen tools, policy discovery and read-only inspection."""
+"""Run inside Hermes: real MCP handshake, sixteen tools, policy discovery and read-only inspection."""
 import asyncio
 import json
 import sys
@@ -36,7 +36,7 @@ async def main():
         await send({'id': 2, 'method': 'tools/list', 'params': {}})
         tools = (await receive(2))['tools']
         expected = {
-            'knowledge_search', 'flowforge_list_workflows', 'flowforge_list_tasks',
+            'approval_get_status', 'knowledge_search', 'flowforge_list_workflows', 'flowforge_list_tasks',
             'flowforge_get_run', 'flowforge_run', 'flowforge_list_projects',
             'flowforge_get_project', 'flowforge_get_catalog', 'flowforge_get_project_status',
             'flowforge_doctor', 'flowforge_preview_sync', 'homelab_list_services',
@@ -44,7 +44,7 @@ async def main():
         }
         if {tool['name'] for tool in tools} != expected:
             raise RuntimeError('Unexpected MCP tool inventory')
-        print('PASS: MCP handshake and fifteen expected tools', flush=True)
+        print('PASS: MCP handshake and sixteen expected tools', flush=True)
         schema = next(tool['inputSchema'] for tool in tools if tool['name'] == 'flowforge_run')
         task = schema['properties']['input']
         if '$ref' in task:

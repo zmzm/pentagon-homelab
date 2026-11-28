@@ -145,7 +145,24 @@ export function createGateway({ env, policy, execute = executor(env, policy), st
       });
       let executed;
       try {
-        executed = await execute(tool, args);
+        if (tool === 'approval.getStatus') {
+          const record = load(args.approval_id);
+          // Session annotations restrict accidental cross-conversation reads, not identity.
+          check(record.context.sessionId === context.sessionId, 'APPROVAL_NOT_FOUND', 404);
+          const expired =
+            ['PENDING', 'APPROVED'].includes(record.status) && record.expiresAt <= Date.now();
+          executed = {
+            approvalId: record.id,
+            tool: record.tool,
+            status: expired ? 'EXPIRED' : record.status,
+            storedStatus: record.status,
+            expiresAt: record.expiresAt,
+            ...(record.decision ? { approved: record.decision.approve } : {}),
+            ...(record.outcome ? { outcome: record.outcome } : {}),
+          };
+        } else {
+          executed = await execute(tool, args);
+        }
       } catch (err) {
         if (tool !== 'homelab.restartService') {
           throw err;
@@ -326,7 +343,12 @@ export function createGateway({ env, policy, execute = executor(env, policy), st
       };
       let tool;
       let args;
-      if (req.method === 'POST' && path === '/knowledge/search') {
+      if (path.startsWith('/approval-status/')) {
+        check(req.method === 'GET', 'METHOD_NOT_ALLOWED', 405);
+        check(!url.search, 'INVALID_INPUT');
+        tool = 'approval.getStatus';
+        args = { approval_id: path.slice('/approval-status/'.length) };
+      } else if (req.method === 'POST' && path === '/knowledge/search') {
         tool = 'knowledge.search';
         args = await body(req);
       } else if (req.method === 'POST' && path === '/flowforge/run') {

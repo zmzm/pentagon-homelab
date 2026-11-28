@@ -411,6 +411,21 @@ test('real gateway HTTP and Telegram transport preserve the stored session, audi
     { service: 'vaultwarden' },
     { sessionId: 'retained-session', userRequest: 'Restart Vaultwarden' },
   );
+  const modelStatus = async () => {
+    const response = await fetch(
+      `http://127.0.0.1:${gateway.server.address().port}/approval-status/${requested.approvalId}`,
+      {
+        headers: {
+          authorization: `Bearer ${env.GATEWAY_TOKEN}`,
+          'x-session-id': 'retained-session',
+          'x-user-request': 'Check approval progress',
+        },
+      },
+    );
+    assert.equal(response.status, 200);
+    return (await response.json()).data;
+  };
+  assert.equal((await modelStatus()).status, 'PENDING');
   let updates = [];
   const sent = [];
   const relay = new TelegramApprovalRelay({
@@ -442,6 +457,10 @@ test('real gateway HTTP and Telegram transport preserve the stored session, audi
   ];
   await relay.tick();
   await relay.tick();
+  const visible = await modelStatus();
+  assert.equal(visible.status, 'DONE');
+  assert.equal(visible.approved, true);
+  assert.equal(visible.outcome.data.restarted, true);
   assert.equal(executions, 1);
   const audit = readFileSync(`${directory}/audit.jsonl`, 'utf8');
   assert.ok(audit.includes('"telegramUpdateId":"4"'));

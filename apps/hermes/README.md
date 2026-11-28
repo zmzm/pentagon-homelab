@@ -472,7 +472,7 @@ python3 scripts/verify_hermes_skills.py
 This uses the live container's exact image ID with networking **disabled**, fake
 gateway credentials, a disposable tmpfs Hermes home and a copy of only the
 existing skills. It mounts the proposed configuration/curated skill/helper,
-registers all fifteen MCP schemas through Hermes' native subprocess
+registers all sixteen MCP schemas through Hermes' native subprocess
 environment, checks effective CLI/Matrix/cron schemas (including prohibited
 tools and absence of `skill_manage`), and verifies the native prompt index,
 `skills_list` and `skill_view` resolve the expected mounted skill and exact bytes.
@@ -817,6 +817,7 @@ use verified Matrix event metadata from the separate trusted listener.
 
 | Method/path | Input | Permission |
 | --- | --- | --- |
+| GET `/approval-status/:id` | — | READ; known approval in original session |
 | GET `/health` | — | unauthenticated process liveness |
 | POST `/knowledge/search` | `{query,project?,scope?,limit?}` | READ |
 | GET `/flowforge/workflows` | — | READ |
@@ -834,6 +835,31 @@ use verified Matrix event metadata from the separate trusted listener.
 | GET `/homelab/services/:name/logs` | `lines=1..500`, optional ISO `since` | READ |
 | POST `/homelab/services/:name/restart` | `{}` | service policy |
 | GET `/metrics` | — | authenticated metrics |
+
+Hermes can read a known request through `approval_get_status(approval_id, session_id,
+user_request)`, backed by GET `/approval-status/:id` with the gateway credential.
+Use the original request's session annotation; a different session or missing ID
+returns `APPROVAL_NOT_FOUND`. Session annotations are model-supplied, not authenticated
+identity. The response includes `approvalId`, `tool`, `status`, `storedStatus`,
+`expiresAt`, optional `approved` and the gateway-redacted stored `outcome`. It omits
+arguments, conversation context, operator identity and relay event metadata.
+Expired PENDING/APPROVED records report `status:EXPIRED` without rewriting storage;
+terminal states retain their recorded meaning. CONSUMED can reflect an interrupted
+execution and must not be replayed. DONE for FlowForge means submission; use
+`outcome.data.run_id` with `flowforge_get_run` for planning progress.
+
+This read does not grant approval, consume a claim, execute, or report Telegram
+delivery. The separate bot does not wake Hermes or inject its messages into the
+conversation: Hermes checks on user follow-up, without tight polling or a duplicate
+write. Gateway audit entries still record these reads.
+
+Compatibility: the MCP catalog/include list adds a sixteenth tool; the gateway
+adds this read route. Existing relay, broker, adapter, operator APIs and retained
+approval/audit/run/relay/native-session records are unchanged, with no migration.
+Deploy the gateway before reloading Hermes' bridge/config/SOUL; an older gateway
+returns NOT_FOUND for this new route. Rollback retains all decisions and claims.
+Gateway build/recreation and a Hermes reload are required for activation; no relay
+or broker restart is required. Local checks do not establish live acceptance.
 
 Approval administration uses the separate approver credential: GET `/approvals`, GET
 `/approvals/:id`, POST `/approvals/:id` with decision/operator and optional verified Matrix
@@ -1062,7 +1088,7 @@ These commands are retained for subsequent operator rollouts; the deployment
 record describes the completed rollout and exact checks performed.
 For homelab service discovery alone, no policy edit, new credential, broker restart
 or restart of Matrix or the inventoried applications is needed. Registration verification expects
-fifteen personal tools and checks effective CLI, Matrix and cron selections. The
+sixteen personal tools and checks effective CLI, Telegram and cron selections. The
 MCP smoke check reads policy coverage before its existing Vaultwarden inspection.
 Live model/Matrix behavioral acceptance remains a separate authorized step; do
 not request a restart to test discovery or diagnosis.

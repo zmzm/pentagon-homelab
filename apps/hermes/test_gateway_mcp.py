@@ -17,6 +17,25 @@ with patch.dict(os.environ, {'GATEWAY_TOKEN': 'fixture-gateway-token',
 
 
 class ServiceDiscovery(unittest.TestCase):
+    def test_approval_status_is_registered_and_forwards_only_read_context(self):
+        tools = asyncio.run(bridge.mcp.list_tools())
+        tool = next(tool for tool in tools if tool.name == 'approval_get_status')
+        schema = tool.model_dump(by_alias=True)['inputSchema']
+        self.assertEqual(set(schema['properties']), {'approval_id', 'session_id', 'user_request'})
+        self.assertEqual(set(schema['required']), {'approval_id', 'session_id', 'user_request'})
+        response = MagicMock()
+        payload = {'success': True, 'data': {'status': 'REJECTED', 'approved': False}}
+        response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+        with patch.object(bridge.urllib.request, 'urlopen', return_value=response) as upstream:
+            self.assertEqual(bridge.approval_get_status('known/id', 'original session', 'Check decision'), payload)
+        request = upstream.call_args.args[0]
+        self.assertEqual(request.full_url, 'http://gateway.fixture:8080/approval-status/known%2Fid')
+        self.assertEqual(request.get_method(), 'GET')
+        self.assertIsNone(request.data)
+        self.assertEqual(request.get_header('Authorization'), 'Bearer fixture-gateway-token')
+        self.assertEqual(request.get_header('X-session-id'), 'original%20session')
+        self.assertIsNone(request.get_header('X-approval-id'))
+
     def test_flowforge_read_tools_have_no_write_flags_and_use_only_get(self):
         functions = {
             'flowforge_list_projects': (bridge.flowforge_list_projects, '/flowforge/projects'),

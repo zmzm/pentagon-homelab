@@ -59,7 +59,7 @@ def verify_selection(config, personal, platform):
         available_toolsets={'skills'})
     if 'homelab-service-diagnosis' not in index:
         raise RuntimeError(f'{platform}: curated skill absent from native system-prompt index')
-    print(f'PASS: {platform} effective schemas include native skill reads and all fifteen personal MCP tools; prohibited tools absent')
+    print(f'PASS: {platform} effective schemas include native skill reads and all sixteen personal MCP tools; prohibited tools absent')
 
 
 def main():
@@ -77,7 +77,7 @@ def main():
         raise RuntimeError('Native provider waits or gateway inactivity limits exceed chat budgets')
     print('PASS: native provider timeout resolvers and gateway inactivity budgets are bounded')
     expected = {
-        'knowledge_search', 'flowforge_list_workflows',
+        'approval_get_status', 'knowledge_search', 'flowforge_list_workflows',
         'flowforge_list_projects', 'flowforge_get_project', 'flowforge_get_catalog',
         'flowforge_get_project_status', 'flowforge_doctor', 'flowforge_preview_sync',
         'flowforge_list_tasks', 'flowforge_get_run', 'flowforge_run', 'homelab_inspect_service',
@@ -93,7 +93,7 @@ def main():
             raise RuntimeError('Missing tools in Hermes registration: ' + ', '.join(sorted(missing)))
         if raw_names != expected:
             raise RuntimeError('Unexpected personal MCP inventory')
-        print('PASS: Hermes registered all fifteen personal MCP tools through its filtered subprocess environment')
+        print('PASS: Hermes registered all sixteen personal MCP tools through its filtered subprocess environment')
         for platform in ('cli', 'telegram', 'cron'):
             verify_selection(config, personal, platform)
         assert config['skills']['inline_shell'] is False

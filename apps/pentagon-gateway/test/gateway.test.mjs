@@ -706,3 +706,105 @@ test('task-analysis requires a concrete Mentory task and immutable task content 
     'READ',
   );
 });
+
+test('model reads relay decisions and retained outcomes without executing or changing approvals', async (t) => {
+  let calls = 0;
+  const { request, state } = await fixture(t, async () => {
+    calls++;
+    return { restarted: true, note: env.BROKER_TOKEN };
+  });
+  const created = await request('/homelab/services/vaultwarden/restart', {
+    method: 'POST',
+    data: {},
+  });
+  const id = created.data.approvalId;
+  const route = `/approval-status/${id}`;
+  assert.equal((await request(route)).data.data.status, 'PENDING');
+  assert.equal((await request(route, { headers: { 'x-session-id': 'other' } })).status, 404);
+  assert.equal((await request(route, { token: 'invalid' })).status, 401);
+  assert.equal((await request(route, { token: env.APPROVER_TOKEN })).status, 401);
+  assert.equal((await request(route, { method: 'POST', data: { approve: true } })).status, 405);
+  assert.equal((await request(route + '/execute', { method: 'POST', data: {} })).status, 405);
+  assert.equal((await request(route + '?execute=true')).status, 400);
+  assert.equal((await request('/approval-status/not-an-id')).status, 400);
+  assert.equal(
+    (await request('/approval-status/00000000-0000-0000-0000-000000000000')).status,
+    404,
+  );
+  assert.equal((await request(`/approvals/${id}`)).status, 401);
+  assert.equal(
+    (await request(`/approvals/${id}/execute`, { method: 'POST', data: {} })).status,
+    401,
+  );
+  assert.equal(calls, 0);
+  await request(`/approvals/${id}`, {
+    admin: true,
+    method: 'POST',
+    data: {
+      approve: true,
+      operator: 'fixture',
+      telegramUpdateId: '1',
+      telegramChatId: '2',
+      telegramPromptMessageId: '3',
+    },
+  });
+  const approved = (await request(route)).data.data;
+  assert.equal(approved.status, 'APPROVED');
+  assert.equal(approved.approved, true);
+  assert.equal(calls, 0);
+  await request(`/approvals/${id}/execute`, { admin: true, method: 'POST', data: {} });
+  const done = (await request(route)).data.data;
+  assert.equal(done.status, 'DONE');
+  assert.equal(done.outcome.data.restarted, true);
+  assert.ok(!JSON.stringify(done).includes(env.BROKER_TOKEN));
+  assert.deepEqual(Object.keys(done).sort(), [
+    'approvalId',
+    'approved',
+    'expiresAt',
+    'outcome',
+    'status',
+    'storedStatus',
+    'tool',
+  ]);
+  assert.equal(calls, 1);
+  const path = `${state}/approvals/${id}.json`;
+  const record = JSON.parse(readFileSync(path));
+  // Retained records are projected without migration, mutation, or upstream calls.
+  for (const status of [
+    'PENDING',
+    'APPROVED',
+    'REJECTED',
+    'CONSUMED',
+    'DONE',
+    'FAILED',
+    'UNCERTAIN',
+  ]) {
+    const retained = { ...record, status, expiresAt: Date.now() - 1 };
+    writeFileSync(path, JSON.stringify(retained));
+    const before = readFileSync(path, 'utf8');
+    const result = (await request(route)).data.data;
+    assert.equal(result.status, ['PENDING', 'APPROVED'].includes(status) ? 'EXPIRED' : status);
+    assert.equal(result.storedStatus, status);
+    assert.equal(readFileSync(path, 'utf8'), before);
+  }
+  assert.equal(calls, 1);
+  assert.equal(readdirSync(`${state}/approvals`).length, 1);
+  assert.ok(readFileSync(`${state}/audit.jsonl`, 'utf8').includes('approval.getStatus'));
+});
+
+test('model sees a relay rejection without resubmitting the action', async (t) => {
+  const { request } = await fixture(t, async () => assert.fail('must not execute'));
+  const { data } = await request('/homelab/services/vaultwarden/restart', {
+    method: 'POST',
+    data: {},
+  });
+  await request(`/approvals/${data.approvalId}`, {
+    admin: true,
+    method: 'POST',
+    data: { approve: false, operator: 'fixture' },
+  });
+  const result = (await request(`/approval-status/${data.approvalId}`)).data.data;
+  assert.equal(result.status, 'REJECTED');
+  assert.equal(result.approved, false);
+  assert.equal(result.outcome, undefined);
+});

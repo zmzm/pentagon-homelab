@@ -36,6 +36,11 @@ export function validatePolicy(policy) {
   return policy;
 }
 export function operation(tool, args, policy) {
+  if (tool === 'approval.getStatus') {
+    object(args, ['approval_id']);
+    check(typeof args.approval_id === 'string' && /^[0-9a-f-]{36}$/.test(args.approval_id));
+    return 'READ';
+  }
   if (tool === 'knowledge.search') {
     object(args, ['query', 'project', 'scope', 'limit']);
     str(args.query);
