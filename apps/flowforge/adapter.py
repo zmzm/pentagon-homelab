@@ -21,6 +21,11 @@ QUEUE = Path('/source/tasks.jsonl')
 STEPS = Path('/source/steps.json')
 RUNNER_DIR = Path('/source/flowforge')
 PLANNING_AGENTS = Path('/source/planning-agents')
+PLANNING_RESOURCES = Path('/source/planning-resources')
+PLANNING_PATHS = Path('/source/planning-paths.json')
+SOURCE_LIBRARY = os.environ.get('FLOWFORGE_SOURCE_AGENT_LIBRARY', '/home/pentagon-admin/.config/flowforge/library')
+KNOWLEDGE_ROUTER = '/home/pentagon-admin/Documents/apps/knowledge-router'
+KNOWLEDGE_VAULT = '/home/pentagon-admin/Documents/apps/obsidian-vaults/coding'
 STATE = Path('/state')
 LOCK = threading.Lock()
 
@@ -76,7 +81,7 @@ def planning_context(folder, pr):
         workflow_file=(folder / 'steps.json').resolve(),
         runs_dir=(folder / 'logs').resolve(), config_dir=(folder / 'config').resolve(),
         step_timeout=900, heartbeat=30, opencode='/usr/local/bin/opencode',
-        notification_env={'MATRIX_ENABLED': 'false'}, legacy=True,
+        notification_env={'TELEGRAM_ENABLED': 'false'}, legacy=True,
     )
 
 
@@ -128,6 +133,21 @@ def validate_run(payload):
     return data
 
 
+def planning_text(text, project):
+    """Relocate reviewed library references into the isolated planning snapshot."""
+    mappings = json.loads(PLANNING_PATHS.read_text()) if PLANNING_PATHS.is_file() else {}
+    for old, new in sorted(mappings.items(), key=lambda item: -len(item[0])):
+        text = text.replace(old, new)
+    for old, new in (
+        (SOURCE_LIBRARY, str(project / '.opencode')),
+        ('/home/pentagon-admin/Projects/knowledge-router', KNOWLEDGE_ROUTER),
+        ('/home/pentagon-admin/Projects/obsidian-vaults/coding', KNOWLEDGE_VAULT),
+        ('/home/pentagon-admin/.local/state/flowforge/knowledge/index.json', '/state/knowledge/index.json'),
+    ):
+        text = text.replace(old, new)
+    return re.sub(r'(?m)^KNOWLEDGE_NODE=.*$', 'KNOWLEDGE_NODE=/usr/local/bin/node', text)
+
+
 def snapshot_project(destination):
     listing = subprocess.run(['git', '-C', str(PROJECT), 'ls-files', '-z'], check=True, capture_output=True, timeout=15).stdout
     total = 0
@@ -156,14 +176,27 @@ def snapshot_project(destination):
         (destination / 'HERMES_SNAPSHOT_LIMITS.md').write_text('Large files omitted from this read-only planning snapshot. Do not assume their contents.\n\n' + '\n'.join(omitted))
     agents = destination / '.opencode/agents'
     agents.mkdir(parents=True)
+    if PLANNING_RESOURCES.is_dir():
+        check(not any(p.is_symlink() for p in PLANNING_RESOURCES.rglob('*')), 'UNSAFE_PLANNING_RESOURCE')
+        resources = destination / '.opencode/resources'
+        shutil.copytree(PLANNING_RESOURCES, resources)
+        for path in resources.rglob('*'):
+            if path.is_file() and path.suffix in ('.md', '.json', '.txt', ''):
+                path.write_text(planning_text(path.read_text(), destination))
     for name in ('concept-plan', 'grounded-hard'):
         source = PLANNING_AGENTS / f'{name}.md'
         check(source.is_file() and not source.is_symlink(), 'PLANNING_AGENT_NOT_FOUND')
-        shutil.copyfile(source, agents / source.name)
-    for name in ('AGENTS.md',):
-        source = PROJECT / '.opencode' / name
-        if source.is_file() and not source.is_symlink():
-            shutil.copyfile(source, destination / '.opencode' / name)
+        text = planning_text(source.read_text(), destination)
+        # Worker permissions are authoritative for this isolated deployment. Do not
+        # merge central wildcard rules that can hide scoped output/tool allowances.
+        text = re.sub(r'(?m)^permission:\n(?:[ \t].*\n|\n)*', '', text, count=1)
+        if PLANNING_RESOURCES.is_dir():
+            text += '\n\n## Isolated Hermes planning adapter\n\nSerena MCP is disabled in this deployment. For grounding, use targeted read/grep\nwith the supplied hypothesis and scope discipline. Knowledge Router\nremains the source of documented conventions. Only designated plan outputs may\nbe written; this adapter never performs execution steps.\n'
+        (agents / source.name).write_text(text)
+    (destination / '.opencode/AGENTS.md').write_text(
+        '# Isolated planning snapshot\n\nFollow the selected planning agent and explicit task scope. '
+        'Use Knowledge Router for conventions and targeted read/grep for code facts. '
+        'Serena MCP is disabled here. Do not run execution steps or modify source code.\n')
     subprocess.run(['git', 'init', '-q', str(destination)], check=True, timeout=15)
 
 
@@ -204,16 +237,19 @@ def worker(folder):
     try:
         project = folder / 'project'
         task_dir = project / '.opencode/tasks/hermes-analysis'
-        os.environ['MATRIX_ENABLED'] = 'false'
+        os.environ['TELEGRAM_ENABLED'] = 'false'
         os.environ['OPENCODE_BIN'] = '/usr/local/bin/opencode'
         # Read checks use project-relative paths; external_directory enforces the
         # absolute directory boundary before a read can leave the snapshot.
         permission = {'*': 'deny', 'read': 'allow', 'glob': 'allow', 'grep': 'allow',
-                      'edit': {'*': 'deny', str(task_dir / 'concept-plan.md'): 'allow', str(task_dir / 'grounded-plan.md'): 'allow'},
+                      'edit': {'*': 'deny', str(task_dir / 'concept-plan.md'): 'allow', str(task_dir / 'grounded-plan.md'): 'allow',
+                               '.opencode/tasks/hermes-analysis/concept-plan.md': 'allow',
+                               '.opencode/tasks/hermes-analysis/grounded-plan.md': 'allow'},
                       'external_directory': {'*': 'deny', str(project / '*'): 'allow',
-                                             '/home/pentagon-admin/Documents/apps/knowledge-router/*': 'allow',
-                                             '/home/pentagon-admin/Documents/apps/obsidian-vaults/coding/*': 'allow'},
-                      'bash': {'*': 'deny', '/home/pentagon-admin/Documents/apps/knowledge-router/scripts/knowledge *': 'allow'}}
+                                             KNOWLEDGE_ROUTER + '/*': 'allow',
+                                             '/state/knowledge/*': 'allow',
+                                             KNOWLEDGE_VAULT + '/*': 'allow'},
+                      'bash': {'*': 'deny', 'sh ' + str(project / '.opencode/resources/knowledge/router') + ' *': 'allow'}}
         # Existing prompts and model choices remain FlowForge's; only deployment permissions change.
         os.environ['OPENCODE_CONFIG_CONTENT'] = json.dumps({
             'autoupdate': False, 'snapshot': False, 'plugin': [], 'mcp': {'serena': {'enabled': False}},

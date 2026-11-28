@@ -189,6 +189,26 @@ class AdapterTests(unittest.TestCase):
             module.prepare_job(self.payload['input'], {'task_file': str(self.task)}, pr, another)
         self.assertEqual(failure.exception.code, 'PLANNING_AGENT_NOT_FOUND')
 
+    def test_shared_resources_are_relocated_without_project_prompt_permissions(self):
+        resources = self.root / 'shared-resources'
+        (resources / 'knowledge').mkdir(parents=True)
+        (resources / 'knowledge/router').write_text('KNOWLEDGE_NODE=/old/node\n')
+        paths = self.root / 'paths.json'
+        paths.write_text(json.dumps({'docs/SERENA-RULES.md': '/central/library/resources/protocols/SERENA-RULES.md'}))
+        agent = self.agents / 'concept-plan.md'
+        agent.write_text('---\ndescription: Fixture\nmode: primary\npermission:\n  bash: allow\n  edit: allow\n---\nRead docs/SERENA-RULES.md and /central/library/resources/knowledge/router.\n')
+        pr = self.load_runner()
+        with patch.object(module, 'PLANNING_RESOURCES', resources), patch.object(module, 'PLANNING_PATHS', paths), patch.object(module, 'SOURCE_LIBRARY', '/central/library'):
+            _, project, _ = self.prepare_fixture('resource-copy', pr)
+        text = (project / '.opencode/agents/concept-plan.md').read_text()
+        self.assertNotIn('/central/library', text)
+        self.assertNotIn('permission:', text)
+        self.assertIn(str(project / '.opencode/resources/protocols/SERENA-RULES.md'), text)
+        wrapper = project / '.opencode/resources/knowledge/router'
+        self.assertIn('KNOWLEDGE_NODE=/usr/local/bin/node', wrapper.read_text())
+        self.assertNotIn('QMD', (project / '.opencode/AGENTS.md').read_text())
+        self.assertFalse((project / '.opencode/agents/execution-plan.md').exists())
+
     def test_worker_rejects_execution_and_missing_private_workflow(self):
         pr = self.load_runner()
         for change in ('extra-step', 'extra-run-step', 'task-workflow', 'missing-config'):

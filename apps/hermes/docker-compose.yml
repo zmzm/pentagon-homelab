@@ -78,6 +78,7 @@ services:
     cpus: 1
   flowforge-api:
     build: ../flowforge
+    command: [python3, adapter.py]
     restart: unless-stopped
     init: true
     user: "1000:1000"
@@ -87,6 +88,7 @@ services:
     environment:
       FLOWFORGE_TOKEN: ${FLOWFORGE_TOKEN:?set FLOWFORGE_TOKEN}
       FLOWFORGE_SOURCE_PROJECT: ${MENTORY_PROJECT_PATH:-/home/pentagon-admin/Projects/mentory}
+      FLOWFORGE_SOURCE_AGENT_LIBRARY: ${FLOWFORGE_AGENT_LIBRARY_PATH:-/home/pentagon-admin/.config/flowforge/library}
       GLM_API_KEY: ${GLM_API_KEY:?set GLM_API_KEY}
       HOME: /state/home
       XDG_CONFIG_HOME: /state/home/.config
@@ -104,6 +106,8 @@ services:
       - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_models.py:/source/flowforge/flowforge_models.py:ro
       - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_opencode.py:/source/flowforge/flowforge_opencode.py:ro
       - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/flowforge_workflows.py:/source/flowforge/flowforge_workflows.py:ro
+      - ${FLOWFORGE_AGENT_LIBRARY_PATH:-/home/pentagon-admin/.config/flowforge/library}/resources:/source/planning-resources:ro
+      - ${FLOWFORGE_AGENT_LIBRARY_PATH:-/home/pentagon-admin/.config/flowforge/library}/paths.json:/source/planning-paths.json:ro
       - ${FLOWFORGE_AGENT_LIBRARY_PATH:-/home/pentagon-admin/.config/flowforge/library}/agents/concept-plan.md:/source/planning-agents/concept-plan.md:ro
       - ${FLOWFORGE_AGENT_LIBRARY_PATH:-/home/pentagon-admin/.config/flowforge/library}/agents/grounded-hard.md:/source/planning-agents/grounded-hard.md:ro
       - ${FLOWFORGE_PATH:-/home/pentagon-admin/Projects/flow-forge}/tasks.jsonl:/source/tasks.jsonl:ro

@@ -7,8 +7,8 @@ the `execution` step.
 
 Files over 16 MiB are omitted with an explicit snapshot manifest; total copied source is capped at 128 MiB.
 
-The source Mentory repository, source task queue and four required FlowForge modules
-are mounted read-only. Only the central library’s `concept-plan` and `grounded-hard`
+The source Mentory repository, source task queue and required FlowForge modules
+are mounted read-only. The central library’s `concept-plan` and `grounded-hard`
 agent files are mounted, under `/source/planning-agents`; project agent copies are
 not used. Set `FLOWFORGE_AGENT_LIBRARY_PATH` to the imported private FlowForge library
 (default `/home/pentagon-admin/.config/flowforge/library`). No execution-agent
@@ -199,3 +199,28 @@ HTTP authentication/read-only routes, bounds, safe failures, token stripping and
 the exact module mount set in an isolated subprocess. Hash comparisons check
 that reads/previews neither alter queues nor create state/artifacts. The external
 FlowForge checkout is required for integration tests; no model is called.
+
+## Current central-library integration
+
+The planning container receives the two selected agent definitions plus their shared
+resources and reference map. Each job relocates those resources into its private
+snapshot, replaces host-only Node/cache paths with container paths, and removes
+source-agent permission declarations before applying the adapter's scoped policy.
+No execution agent is copied. The native preflight checks actual Knowledge Router
+retrieval through the scoped wrapper as well as the existing output/read boundaries.
+
+The inspector requires `FLOWFORGE_READ_PROJECTS` and a registered project. Mentory's
+JSONL registration points to the local FlowForge `tasks.jsonl` and `steps.json`;
+inspection never applies sync or runs queued tasks. Use the native Linux OpenCode
+binary for `OPENCODE_BINARY`, rather than its npm Node.js launcher.
+
+Activation on 2026-11-28 registered Mentory against the local 144-row JSONL queue
+and started only `flowforge-api` and `flowforge-inspect`. Eight read-only operations
+passed through Hermes's actual bridge/gateway, host doctor passed, all 19 adapter/
+inspector tests passed, and native registration confirmed the existing fifteen MCP
+tools for CLI, Telegram and cron. The native planning preflight verified designated
+plan writes, denied outside reads/undesignated writes/arbitrary shell, and performed
+Knowledge Router retrieval without a model call. OpenCode 1.19 checks edit paths
+relative to the worktree, so the two designated outputs have explicit relative
+allowances alongside their absolute forms. The queue remains 112 done / 32 todo;
+no planning request, approval, message or paid model execution was submitted.

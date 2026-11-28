@@ -76,6 +76,15 @@ def validate_only(**kwargs):
             for path in (target, denied):
                 if path.exists():
                     path.unlink()
+    wrapper = project / '.opencode/resources/knowledge/router'
+    knowledge = subprocess.run(['/usr/local/bin/opencode', 'debug', 'agent', 'concept-plan',
+                                '--tool', 'bash', '--params', json.dumps({
+                                    'command': 'sh ' + str(wrapper) + ' search "React Query cache invalidation" --json',
+                                    'description': 'Verify scoped Knowledge Router retrieval'})],
+                               cwd=project, capture_output=True, text=True, timeout=45, stdin=subprocess.DEVNULL)
+    assert knowledge.returncode == 0, 'Scoped Knowledge Router command was rejected or failed'
+    assert 'react-query' in knowledge.stdout, 'Knowledge Router returned no expected guidance'
+    print('PASS: native concept agent executes the scoped Knowledge Router wrapper successfully')
     blocked_shell = subprocess.run(['/usr/local/bin/opencode', 'debug', 'agent', 'concept-plan',
                                     '--tool', 'bash', '--params', json.dumps({'command':'printf flowforge-deny-probe', 'description':'Verify arbitrary shell remains denied'})],
                                    cwd=project, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
